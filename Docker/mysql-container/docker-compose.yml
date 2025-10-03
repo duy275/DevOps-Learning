@@ -1,0 +1,49 @@
+services:
+  mysql-master:
+    image: mysql
+    container_name: mysql1
+    #restart: always #nếu container bị crash hoặc Docker daemon restart -> container tự bật lại
+    environment: #Các biến môi trường khởi tạo lần đầu, nếu volume có dữ liệu -> không khởi tạo nữa
+      MYSQL_ROOT_PASSWORD: hoanqdy275
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: repl
+      MYSQL_PASSWORD: Repl@123
+    ports:
+      - "3307:3306" # 3307 trên host ánh xạ đến 3306 trên container
+      # -> nếu mysql -h 127.0.0.1 -P 3307 -uroot -p là vào master
+    command: --server-id=1 --log-bin=mysql-bin
+    #như ở trên linux bình thường config là phải truy cập vào file /etc/mysql/mysql.d/mysqld.conf để thêm server-id với log-bin và
+    #bin-address ở trên đây thì chỉ cần ghi vào command -> nó sẽ tự thêm vào
+    #cái bin-address ở trên mysql image không cần thêm vì mặc định của nó đã là 0.0.0.0
+    #command: lệnh khởi động mặc định của Mysql
+    volumes:
+      - ./master_data:/var/lib/mysql
+    networks:
+      ubuntu-lab_mynet:
+        ipv4_address: 10.2.6.12
+
+  mysql-slave:
+    image: mysql:8.0
+    container_name: mysql2
+    #restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: hoanqdy275
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: repl
+      MYSQL_PASSWORD: Repl@123
+    ports:
+      - "3308:3306"
+    command: --server-id=2
+    #không cần bật relay log tại khi m chạy CHANGE REPLICATION SOURCE TO ... thì relay log tự được tọa ra
+    #nó nằm trong /var/lib/mysql
+    #domình mount volume:
+    #nên relay log thật sẽ nằm trên host
+    volumes:
+      - ./slave_data:/var/lib/mysql
+    networks:
+      ubuntu-lab_mynet:
+        ipv4_address: 10.2.6.13
+
+networks:
+  ubuntu-lab_mynet:
+    external: true

@@ -1,0 +1,219 @@
+I. Install Mysql
+-sudo apt install mysql-server
+-enable service
+sudo systemctl start mysql.service
+sudo systemctl enable mysql.service
+II. Configuration
+#chạy lệnh này để đặt bảo mật và tùy chỉnh
+-sudo mysql_secure_installation
+password root cho Mysql
+bật tắt anonymous cho user
+không cho remote root
+xóa test db
+#login
+mysql -u root -p
+#đổi phương pháp xác thực root user thành xác thực bằng mật khẩu với lệnh 
+ALTER USER "root"@"localhost" IDENTIFIED WITH mysql_native_password BY "newpassword"
+#đổi phương pháp xác thực root user thành auth socket (sudo)
+ALTER USER "root"@"localhost" IDENtIFIED WITH auth_socket;
+III. Tạo User
+#Ở ubuntu chạy mysql 5.7 trở lên root user được xác thực bằng auth_socket
+#Lệnh tạo user
+CREATE USER "username"@"host" IDENTIFI WITH authentication_plugin BY "password";
+#có thể sử dụng những plugin khác nhau phù hợp với người dùng, auth_socket là một plugin tốt nhưng chỉ có thể login ở local không có kết nối từ xa
+#có thể bỏ hẳn phần WITH authentication_plugin nếu muốn xác thực bnawfg plugin mặc định của mysql(caching_sha2_password)
+CREATE USER "username"@"localhost" IDENTIFIED WITH mysql_native_password "password";
+#Chuyển phương pháp xác thực thành caching_sha2_plugin
+ALTER USER "username" IDENTIFI WITH mysql_native_password BY "password";
+#Gán các giá trị đặc quyền 
+GRANT PRIVILEGE ON database.table TO "username"@"host"
+#PRIVILEGE định nghĩa hành động mà user được phép thực hiện trên database mà table được chỉ định. Người dùng cũng có thể gán nhiều đặc quyền khác trong cùng một lệnh bằng cách phân tách nhau bởi dấu phẩy, muốn toàn quyền dùng *
+
+exp:
+--tạo user chỉ cho phép login từ mọi host
+CREATE USER "user1"@"%" IDENTIFIED BY "passuser1"
+--gán quyền SELECT, INSERT, UPDATE, DELETE cho toàn bộ db mydb
+GRANT SELECT, INSERT, UPDATE, DELETE ON mydb.* TO 'user'@'%'
+--tạo user chỉ có quyền trên 1 bảng cụ thể
+CREATE USER 'user2'@'%' IDENTIFIED BY 'passuser2'
+--Gán quyền SELECT, INSERT trên bảng sinhvien trong database mydb
+GRANT SELECT, INSERT ON mydb.sinhvien TO "user"@'%'
+--tạo user có quyền trên toàn bộ server
+CREATE USER "admin2"@"%" IDENTIFIED BY "adminpass"
+-- Gán ALL PRIVILEGES trên tất cả db và bảng
+GRANT ALL  PRIVILEGES ON *.* TO "admin"@"%" WITH GRANT OPTION;
+--Chỉnh xong nhớ reload PRIVILEGES;
+FLUSH PRIVILEGES;
+--kiểm tra quyền user
+SHOW GRANTS FOR "user1";
+
+__________________________________________________________________
+Flow replication MySQL
+__________________________________________________________________
+1. Ứng dụng, người dùng --> gửi lệnh SQL tới master (vm1)
+2. Master
+-Ghi thay đổi vào binary log
+-Binlog chứa toàn bộ các lệnh thay đổi dữ liệu(dưới dạng event)
+3. Slave
+-Dùng user repl connect tới master qua network (port 3306).
+-Gọi tiến trình IO thread: Nó copy dữ liệu từ binlog master về và lưu vào replay log trên slave.
+4. SQL thread trên slave:
+-đọc replay log.
+-Thực thi các câu lệnh y như master
+5. Kết quả
+-Slave có dữ liệu giống master
+-Khi có thay đổi mới trên master, slave sẽ tiếp tục lấy về và update
+
+#Cách cài đặt Master Slave (primary standby) database trên MySQL
+--1. Mở file cấu hình MySQL
+sudo nvim /etc/mysql/mysql.conf.d/mysqld.cnf
+--2. Tìm và sửa
+bind-adress = 10.2.5.1 #mặc định là 127.0.0.1
+# đây là IP mà mysql server sẽ lắng nghe --> ai muốn connect vào sẽ phải đi qua cái ip này
+server-id = 1 #id của Master
+log_bin = /var/log/mysql/mysql-bin.log #bật binary log
+--3. Restart MySQL
+sudo systemctl restart mysql
+--4. Vào MySQL tạo user cho replication:
+mysql -u root -p
+#rồi chạy
+CREATE USER "repl"@"10.2.5.11" IDENTIFIED BY "Repl@123";
+GRANT REPLICATION SLAVE ON *.* to "repl"@"10.2.5.11";
+FLUSH PRIVILEGES;
+--5. Khóa bảng để lấy log position
+FLUSH TABLES WITH READ LOCK;
+SHOW MASTER STATUS;
+--> File: mysql-bin.000001
+    Position: 156
+    --> ghi nhớ 2 giá trị này để cấu hình standby bên vm2
+
+_________________________________________________________
+VM2 STANDBY (SLAVE)
+_________________________________________________________
+
+--1. Mở config
+sudo nvim /etc/mysql/mysql.conf.d/mysqld.cnf
+#thêm:
+server-id = 2
+relay-log = /var/log/mysql/mysql-relay.log
+--2. Restart MySQL
+sudo systemctl restart mysql
+--3. Vào MySQL trên VM2:
+mysql -u root -p
+--4. Nói cho slave biết master ở đâu
+CHANGE MASTER TO
+	MASTER_HOST='10.2.5.10',
+	MASTER_USER='repl',
+	MASTER_PASSWORD='12345',
+	MASTER_LOG_FILE='mysql-bin.000001',
+	MASTER_LOG_POS=156;
+--5. bắt đầu replication:
+START SLAVE;
+--6. Kiểm tra:
+SHOW SLAVE STATUS\G
+#Nếu thấy 
+Slave_IO_Running: Yes #dùng user repl để connect tới master đọc binlog từ master copy về slave và ghi lại thành relay log
+Slave_SQL_Running: Yes #Đọc relay log thực thi các câu lệnh làm cho dữ liệu slave giống master
+
+_____________________________________________________________________________
+DUMP DATA
+_____________________________________________________________________________
+
+--Vì Slave đọc dữ liệu log từ file relay nên những dữ liệu trước đây nó sẽ không biết
+--Muốn đồng bộ dữ liệu với MASTER thì phải dump
+--Flow
+-LOCK DATABASE không cho ghi nữa
+-Tạo file dump
+-copy file dump vào slave
+-đồng bộ
+-UNLOCK DATABASE
+
+#Cái file log chỉ như một cái đánh dấu mục lục sách để đọc từ đấy đi thôi chứ những nội dung trước thì Slave không biết được
+#File và Position luôn được thay đổi trong quá trình insert dữ liệu
+-File: file log đang được ghi
+-Pos: Vị trí trong file đấy
+__________________________________________
+Nếu bị lỗi thì đọc trong file log ở /var/log/mysql/error.log
+Hoặc đọc wanring khi STOP START SLAVE bằng lệnh
+SHOW WARNINGS;
+
+Lỗi 1396
+Error "Operation ALTER USER failed for "repl"@"10.2.5.11"
+Error_code: MY-001396
+--Nguyên nhân:
+- Master ghi câu lệnh quản lý user (CREATE USER, ALTER USER, GRANT, DROP USER) vào binlog
+- Slave đọc binlog và cũng thực thi lại.
+- Nhưng user đó đã tồn tài hoặc không tồn tại trên slave -> dẫn đêns lỗi 1396.
+--Cách xử lý:
+1. Bỏ qua event lỗi (chạy tiếp ngay lập tức)
+STOP SLAVE;
+SET GLOBAL sql_slave_skip_counter = 1;
+START SLAVE;
+2. Ngăn không chi replicate mấy lệnh user nữa
+trên master chỉnh file mysqld.cnf
+binlog_do_db = mydb
+#Chỉ replicate db cần thiết ở đây là mydb
+
+__________________________________________
+SWITCH ROLE
+__________________________________________
+
+#Nếu mà Master lỗi thì đẩy con Slave lên làm Master
+-->
+--Ở Slave chạy:
+STOP SLAVE;
+RESET SLAVE ALL;
+
+khi mà đã chuyển vm2 thành Master rồi thì khi Master cũ phục hồi
+--> phải dump để đồng bộ dữ liệu
+các bước:
+1. mysqldump -u root -p --all-database --master-data=2 --single-transaction --flush-logs --hex-blob > dump.sql
+-u root: user đăng nhập mysql
+-p: yêu cầu password
+--all-databases: dump tất cả database
+-> nếu muốn dump 1 database thì thay bằng tên database, ví dụ:
+mydb
+--master-data=2
+đây là option rất quan trọng cho replication
+nó sẽ chèn vào file dump dòng CHANGE MASTER TO MASTER_LOG_FILE='xxx', MASTER_LOG_POS=xxx
+ý nghĩa:
+- Cho biết tại thời điểm dump thì binlog file & position của master là gì
+- khi import vào slave, dùng chính file/pos này để sync tiếp
+- =1 --> câu lệnh đó không bị comment(có thể chạy thẳng)
+- =2 --> câu lệnh bị comment (-- CHANGE MASTER TO ...;)
+--single-transaction
+- Chạy dump trong một transaction duy nhất
+- Ưu điểm:
+	- Lấy snapshot dữ liệu nhất quán tại một thời điểm
+	- Không khóa bảng (giảm downtime)
+- Nhược điểm: chỉ hoạt động chuẩn với InnoDB(transactional)
+--flush-logs
+- Yêu cầu Mysql ghi binlog hiện tại ra file mới trước khi dump
+- giúp xác định chính xác điểm bắt đầu replication
+--hex-blob
+- Xuất dữ liệu ra dạng nhị phân (BLOB, BINARY) ở dạng hexadecimal (0xABCD...) thay vì text
+- Tránh lỗi khi dữ liệu nhị phân chứa kí tự lạ
+
+2. dùng sftp chuyển file tại tiện setup rồi :))
+3. ở vm1 chạy mysql -u root -p < dump.sql để đồng bộ database mới
+4. đọc file và pos của file binlog tring dump.
+# binlog.000015 157
+5. Dump cho vm1 giống vm2
+-> dùng CHANGE MASTER TO,
+...
+để chuyển vm2 thành master và vm1 bắt đầu làm slave
+
+__________________________________________________
+Chuyển vm1 trở thành lại Master
+__________________________________________________
+1. Check xem trên vm1 (Slave đã sync đầy đủ với Master)
+SHOW SLAVE STATUS\G
+#để ý 2 dòng:
+-Second_Behind_Master = 0
+-Các lỗi
+2. Khóa ghi trên master
+vm2:
+FLUSH TABLE WITH READ LOCK;
+SHOW MASTER STATUS;
+--> ghi lại File và Pos tiếp kkkk
+mysql-bin.000003 157

@@ -1,0 +1,3 @@
+#enable ip_forward
+#sysctl to change variable status in linux kernel
+sudo sysctl -w net.ipv4.ip_forward=1

@@ -1,0 +1,53 @@
+---------------------------------------------------
+1. SSL/TLS là gì
+-SSL (Secure Sockets Layer) và phiên bản sau này là TLS (Transport Layer Security) là giao thức mã hóa trên mạng, đảm bảo:
+1. Bảo mật: dữ liệu truyền đi được mã hóa, không đọc trộm được
+2. Toàn vẹn: dữ liệu không bị sửa trên đường đi
+3. Xác thực: biết chắc mình đang nói chuyện với đúng server và ngược lại nếu bật mTLS
+exp: HTTPS chính là HTTP chạy trên TLS. MySQL replication bắt SSL nghĩa là nó bắt buộc các node phải dùng TLS khi trao đổi.
+
+2. Thành phần chính trong SSL/TLS
+-Khóa bất đối xứng (Asymmetric Keys)
+*Private key: giữ bí mật, chỉ chủ sở hữu mới biết.
+*Public key: phân tán công khai, ai cũng có thể dùng.
+*Cặp này dùng cho:
+  *Mã hóa(ai có public key thì mã hóa được, chỉ có private key mới giải mã được)
+  *Chữ ký số(private key ký, public key verify).
+
+-Certificate (Chứng chỉ số)
+*Là một file chứa public key + thông tin(CN, SAN, ngày hết hạn, issuer,...)
+*Được CA (Certificate Authority) ký bằng private key của CA
+*Nếu một certificate được ký bởi một CA mà mình tin cậy -> mình tin certificate đó hợp lệ.
+
+-CA (Certificate Authority)
+*Là "cơ quan chứng thực" phát hành chứng chủ
+*Có thể là bên thứ 3(Lets Encrypt, DigiCert, ...) hoặc tự làm (self-signed CA).
+*Trong hệ thống nội bộ(như MySQL replication), thường ta sẽ tự dựng CA rồi dùng để ký cho server & client.
+
+3. Quá trình bắt tay (TLS Handshake) cơ bản
+  1. Client -> Server: xin kết nối TLS.
+  2. Server -> Client: gửi certificate (server cert)
+  3. Client: kiểm tra server cert có được CA tin cậy ký không, có hợp lệ không
+  4. Nếu đúng -> tạo session key (key đối xứng, AES/ChaCha) để mã hóa dữ liệu.
+    *Key đối xứng nhanh hơn nên chỉ dùng bất đối xứng ở handshake
+  5. Từ đó về sau, dữ liệu đi qua sé được mã hóa bằng session key.
+  -> Nếu bật mTLS, client cũng gửi certificate cho server kiểm tra.
+
+4. Trong MySQL replication thì SSL/TLS làm gì?
+-Khi replica kết nối master
+  *Master đưa server cert ra -> Replica dùng verify (dùng ca.pem)
+  *Nếu REQUIRED X509, master còn bwats replica gửi client cert
+-Vì MySQL 8 dùng caching_sha2_password, nó cần kết nối an toàn để không gửi password trần -> SSL/TLS là bắt buộc.
+5. Vai trò của OpenSSL
+OpenSSL = công cụ để:
+*Tạo private key
+*Tạo certificate (CA, server,client)
+*Ký chứng chỉ bằng CA
+*Kiểm tra, debug certificate/connection
+6. Các khái niệm cần nhớ
+*Private key: cực kỳ quan trọng không được lộ
+*Public key: nằm trong certificate có thể chia sẻ
+*CA: gốc tin cậy, ai ký bởi nó thì được chấp nhận
+*Server cert: Chứng minh tao chính là server thật
+*Client cert: Chứng minh tao chính là client hợp lệ (nếu bật mTLS)
+*TLS session: sau handshake, client & server trao đổi dữ liệu an toàn

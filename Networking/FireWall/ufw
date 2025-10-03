@@ -1,0 +1,24 @@
+# turn on of ufw
+sudo ufw enable/disable
+# status
+sudo ufw status verbose
+# allow service
+sudo ufw allow ssh / sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp #http
+sudo ufw allow 443/tcp #https
+sudo ufw allow 3000/tcp #random port
+sudo ufw allow from 10.2.5.10 to any port 3000 #random port from another IP
+sudo ufw allow from 10.2.5.0/24 to any port 22 #from subnet
+sudo ufw deny 25/tcp #deny port
+# delete rule
+sudo ufw delete allow 3000/tcp #delete rule
+sudo ufw delete 2 #delete rule by numbered
+#you can see numbered by
+sudo ufw numbered
+# deny all connection income
+sudo ufw default deny incoming
+# allow all connection go out
+sudo ufw default allow outgoing
+# turn on log
+sudo ufw loggin on
+# log will appare in /var/log/ufw.log

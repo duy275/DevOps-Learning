@@ -1,0 +1,101 @@
+------------------------------------------------------------------------------------------------
+Phần 1: -Lý thuyết + Thực hành cơ bản với OpenSSL
+1. Tạo CA (Certificate Authority)
+-> Lý thuyết
+* CA giống như ông bố ký tên xác nhận cho con (server, client)
+* Tự làm CA = self-signed cert
+* Có 2 file quan tọng:
+  * ca-key.pem: private key (bí mật tuyệt đối)
+  * ca.pem: certificate (public, chia cho client & server)
+
+-> Thực hành:
+#Tạo private key cho CA (4096 bit)
+openssl genrsa -out ca-key.pem 4096
+
+genrsa: sinh private key RSA
+-out file.pem: ghi ra file
+-2048: độ dài key(bit)
+
+#Tạo self-signed certificate cho CA (valid 10 năm)
+openssl req -x590 -new -nodes -key ca-key.pem -sha256 -days 3650 -out ca.pem -subj "/CN=MyCA"
+
+req -x590: tạo cert luôn chứ không chủ mỗi (CSR)
+-new: yêu cầu mới
+-nodes: không encrypt private key (nếu không thì key có password, mỗi lần dùng phải gõ pass).
+-key ca-key.pem: dùng private key CA để ký
+-sha256: thuật toán SHA256
+-days 3650: thời hạn hiệu lực
+-out ca.pem: output CA cert
+-subj "/CN=MyCA": tên cho CA
+
+2. Tạo Server key + cert
+-> Lý Thuyết
+*Server cần chứng minh "Tao là server thật"
+*Gồm:
+  * server-key.pem: private key của server
+  * server.csr: yêu cầu chứng chỉ: (Certificate Signing Request)
+  * server-cert.pem: chứng chỉ được CA ký
+
+-> Thực Hành
+#Tạo private key cho server (2048 bit)
+openssl genrsa -out server-key.pem 2048
+
+#Tạo CSR (Certificate Signing Request) với CN = mysql-master
+openssl req -new -key server-key.pem -out server.csr -subj "/CN=mysql-master"
+
+req: thao tác với X.509 request
+-new: tạo mới
+-key: file private key dùng để ký request
+-out: ra file
+-subj: subject (CN = Common Name)
+
+#Tạo file extension (SAN - Subject Alternative Name)
+cat > server-ext.cnf << EOF
+subjectAltName = DNS:mysql-master,IP:127.0.0.1
+EOF
+
+#Ký CSR bằng CA để ra cert cho server
+openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -out server-cert.pem -days 3650 -sha256 -extfile server-ext.cnf
+3. Tạo client key + cert
+#Tạo private key cho client
+openssl genrsa -out client-key.gem 2048
+
+#CSR cho client
+openssl req -new -key client-key.gem -out client.csr -subj "/CN=mysql-repl-client"
+
+#SAN cho client
+cat > client-ext.cnf << EOF
+subjectAltName = DNS:mysql-repl-client
+EOF
+
+#Ký CSR bằng CA
+openssl x509 -req -in client.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -out client-cert.pem -days 3650 -sha256 -extfile client-ext.cnf
+
+4. Chỉnh quyền File
+
+5. Kiểm tra kết quả
+openssl x509 -in server-cert.pem -noout -text
+openssl x509 -in client-cert.pem -noout -text
+openssl req -in server.csr -noout -text
+openssl rsa -in server-key.pem -check
+-------------------------------------------------------------
+Tại sao không cần khởi tạo Public key?
+-------------------------------------------------------------
+Khi mày tạo private key thì thực chất trong file đấy cũng có sẵn luôn public key
+khi mày tạo CSR
+openssl req -new -key server-key.pem ....
+-> public key của server được cop luôn sang cert
+-> CA chỉ thêm chứng chỉ số thôi
+
+-------------------------------------------------------------
+SAN là gì?
+-------------------------------------------------------------
+Trước kia chỉ có một trường để định danh là CN(Common Name)
+khi client connect tới mysql-master TLS sẽ so sánh hostname = CN -> hợp lệ
+Nhưng connect bằng IP nó báo sai vì Cn không khớp
+
+SAN ra đời để giải quyết
+có thể liệt kê nhiều địa chỉ nhà ...
+
+có thể connect bằng host hoặc tên đều được
+

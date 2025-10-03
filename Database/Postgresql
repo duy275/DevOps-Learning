@@ -1,0 +1,221 @@
+I. Install
+AUR: postgresql posgresql-contrib
+--contrib là pakage có các tiện ích và chức năng bổ sung
+--xong thì enable service lên
+II. Phân quyền
+--mặc định postgres sử dụng một khái niệm gọi là roles để xử lý xác thực và ủy quyền. trong một vài ngữ cảnh khái niệm này được ví dụ tương tự như hệ thống phân quyền tài khoản trong unix, nhưng postgre không phân biệt giữa người dùng và nhóm người dùng thay vào đéo sư dụng role để thể hiện một cách linh hoạt hơn
+
+--Khi cài đặt postgre được thiết lập sử dụng phương thức xác thực ngang hàng (peer authentication), có nghĩa là có liên kết các vai trò của postgres với tài khoản hệ thống UNIX/Linux phù hợp. Nếu một vai trò tồn tại trong Postgres, tên người dùng có cùng tên có thể đăng nhập với vai trò đó
+
+--trong quá trình cài đặt đã tọa ra một tài khoản người dùng có tên Postgres được cấp quyền Postgres mặc định. Bạn có thể đăng nhập vào tài khoản đó để sử dụng postgres
+
+#Chuyển sang tài khoản postgres
+
+sudo -i -u postgres
+
+#truy cập vào postgres
+psql
+#thoát 
+\q
+#Truy cập postgres promp mà không cần chuyển đổi tài khoán
+sudo -u postgres psql
+
+III. Tạo một role mới
+#nếu đã đăng nhập psql
+--tạo user mơi
+createuser --interactive
+#xen các cờ bổ sung bằng cách
+man createuser
+IV. Tạo một db mới
+--khi đăng nhập vào hệ thống với vai trò nào thì sẽ có quyền truy cập cơ sở dữ liệu cùng tên với vai trò đó
+#tạo db thích hợp
+createdb <tên role>
+V. Mở Postgres Prompt với role mới
+Để đăng nhập bằng cách xác thực ngang hàng, bạn sẽ cần một người dùng Linux có cùng tên với cơ sở dữ liệu và Role Postgres của bạn.
+
+Nếu bạn không có sẵn Linux user phù hợp, bạn có thể tạo một user mới bằng lệnh adduser. Bạn sẽ phải thực hiện tạo mới user bằng tài khoản có quyền sudo mà không phải root của mình (nghĩa là không đăng nhập với tư cách người dùng postgres):
+
+sudo adduser sammy
+
+Lúc này, tài khoản mới này đã được tạo, bạn có thể chuyển đổi và kết nối với cơ sở dữ liệu bằng cách chạy các câu lệnh sau:
+
+sudo -i -u sammy
+psql
+
+Hoặc bạn có thể viết cùng trên một dòng:
+
+sudo -u sammy psql
+
+Giả sử rằng tất cả các thành phần đã được cấu hình đúng thì lệnh này sẽ giúp bạn tự động đăng nhập vào Postgres Prompt
+
+Nếu bạn muốn tài khoản của mình kết nối với cơ sở dữ liệu khác, bạn có thể làm bằng cách chỉ định cơ sở dữ liệu mong muốn như sau:
+
+psql -d postgres
+
+Khi đó đã đăng nhập thành công, bạn có thể kiểm tra thông tin kết nối hiện tại bằng cách nhập:
+
+\conninfo
+
+Bạn có thể nhận được kết quả như sau:
+
+You are connected to database "sammy" as user "sammy" via socket in "/var/run/postgresql" at port "5432".
+
+Điều này hữu ích kho bạn đang kết nối với cơ sở dữ liệu không mặc định hoặc với người dùng không mặc định.
+VI. Tự học SQL cheatsheet
+
+==============================================================================================
+Replication With Postgresql
+==============================================================================================
+
+1. Primary (VM1)
+--Mở file postgresql.conf (thường ở /etc/postgresql/15/main/postgresql.conf)
+listen_addresses = "10.2.5.1" #primary sẽ lắng nghe trên IP này
+wal_level = replica #cho phép streaming replication
+max_wal_senders = 5 #số standby có thể kết nối
+wal_keep_size = 256 #MB WAL giữ lại để standby kịp lấy
+	--optional: nếu dùng replication slots thì thêm max_replication_slots = 5
+
+--sửa file pg_hba.conf
+#config user kết nối đến primary
+host	replication	repl	10.2.5.11/32	md5
+-host: cho phép kết nối qua TCP/IP
+dùng khi standby ở máy khác (10.2.5.11)
+-replication: áp dụng kết nối phục vụ replication (WAL streaming)
+nếu để tên database mydb thì chỉ áp dụng vào db đó
+-rel: đây là tên user mà mày đã tạo trên primary để dùng cho relication
+ví dụ: CREATE ROLE repl WITH REPLICATION LOGIN PASSWORD 'Repl@123';
+#User này cần có quyền Replication thì mới được phép lấy WAL và chạy standby.
+
+-10.2.5.11/32
+ip của standby
+-md5: phương thức xác thực password
+-khi standby kết nối tới primary -> phải gửi username + password (Postgres sẽ hash bằng md5 để so)
+-các lựa chọn khác có thể là:
+   -trust: không cần password
+   -scram-sha-256: bảo mật hơn md5.
+   -peer: xác thực dựa vào user Linux(chỉ local)
+
+--restart postgresql
+
+--tạo user replication trên primary
+CREATE ROLE repl WITH REPLICATION LOGIN PASSWORD 'Repl@123';
+
+--tạo replication slot
+SELECT * FROM pg_create_physical_replication_slot('slot_vm2');
+
+2. Standby
+--Stop postgresql
+sudo systemctl stop postgresql
+--xóa dữ liệu cũ
+sudo rm -rf /var/lib/postgresql/16/main/*
+
+--chạy pg_basebackup để copy dữ liệu từ primary
+sudo -u postgres PGPASSWORD='Repl@123' pg_basebackup \
+-h 10.2.5.10 -D /var/lib/postgresql/16/main \
+-U repl -P -R \
+--slot=slot_vm2
+
+-h 10.2.5.10 -> host
+-D /var/lib/postgresql/16/main -> nơi lưu data
+-U repl -> user replication
+-P -> show progress
+-R -> tự động tạo standby.signal và primary_conninfo
+
+--Start Stanby
+sudo systemctl start postgresql
+
+--kiểm tra replication
+vm1:
+SELECT pid, client_addr, state, sync_state FROM pg_start_replication;
+-> nếu thấy client_addr = 10.2.5.11 và state = streaming thì ok
+vm2:
+SELECT status FROM pg_stat_wal_receiver;
+-> nếu thấy status = streaming thì ok
+
+
+_______________________________________________
+REPLICATION SLOT
+_______________________________________________
+
+1. Bình thường không có slot
+
+Primary sinh ra WAL (Write-Ahead Log) để ghi mọi thay đổi.
+
+WAL nằm trong thư mục pg_wal.
+
+PostgreSQL sẽ xoá WAL cũ khi:
+
+Checkpoint đã qua,
+
+Và standby (nếu có) không cần WAL đó nữa (hoặc standby… mất kết nối luôn).
+
+-> Nếu standby bị ngắt kết nối quá lâu → WAL trên primary đã xoá → standby không thể bắt kịp → buộc phải pg_basebackup lại toàn bộ.
+
+2. Khi có replication slot
+
+Slot giống như 1 “bookmark” (dấu trang) trên primary, nói rằng:
+
+"Ê, đừng xoá WAL này nhé, standby X vẫn cần nó!"
+
+Cụ thể:
+
+Khi mày tạo slot slot_vm2, Postgres ghi nhớ LSN (log sequence number) mà standby sẽ bắt đầu từ đó.
+
+Standby connect với primary_slot_name = 'slot_vm2'.
+
+Primary sẽ giữ WAL ít nhất đến khi standby confirm đã nhận & flush WAL tới confirmed_flush_lsn.
+
+-> Tóm gọn:
+
+Không mất WAL nữa → standby có thể offline vài tiếng, vài ngày, miễn là disk primary còn chỗ chứa WAL.
+
+Primary chỉ xoá WAL cũ khi tất cả các slot liên quan đã confirm rằng WAL đó không cần.
+
+3. Cơ chế chi tiết
+
+Mỗi slot có 3 điểm chính (xem bằng pg_replication_slots):
+
+restart_lsn → WAL từ đây trở đi sẽ được giữ lại.
+
+confirmed_flush_lsn → standby báo về “tao đã flush WAL đến đây rồi”.
+
+active → standby có đang dùng slot này không.
+
+-> Primary sẽ giữ WAL ≥ restart_lsn để đảm bảo standby có thể catch-up.
+
+____________________________________________________________
+Promote Standby
+____________________________________________________________
+Ở standby dùng
+sudo -u postgres pg_ctlcluster 16 main promote
+
+#   PostgreSQL sẽ xóa file standby.signal.
+
+    Standby dừng WAL streaming.
+
+    Chuyển sang chế độ read-write primary.
+
+--Kiểm tra xem thành Primary mới chưa
+sudo -u postgres psql -c "SELECT pg_is_in_recovery();"
+-> nếu là false nghĩa là không còn ở chế độ recovery -> primary
+
+_____________________________________________________________
+Đồng bộ với primary cũ sau khi quay lại
+_____________________________________________________________
+Nếu master cũ sống lại, nó không thể tự đồng bộ bằng WAL với master mới nữa (timeline đã tách).
+Cách chuẩn:
+
+Xoá data cũ của master cũ.
+
+Dùng pg_basebackup từ master mới để biến nó thành standby.
+
+Hoặc dùng logical replication nếu muốn giữ lại data riêng.
+
+______________________________________________________________
+Stop postgresql service
+______________________________________________________________
+--> mất cluster
+--> phải khởi tạo lại
+sudo pg_createcluster 16 main --start
+xem danh sách cluster 
+sudo pg_lsclusters

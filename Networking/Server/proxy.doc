@@ -1,0 +1,52 @@
+#What is Proxy?
+  # Proxy is a middle server --> a gate to connect between user and internet
+  # Usage like a firewall or a websites filter --> connections safe
+
+# How Proxy works>?
+  # Imagine this is a model of 3 servers
+  # [User] -> [Proxy] -> [Internet]
+  # when User send request to the Internet it will go through Proxy Server
+  # then Proxy will send request to the Internet receive the answer then foward the answer into User
+
+# Proxy's Type
+  # Forward Proxy Y -> Z, Y represent for X. X -> Y -> Z: Z maybe know X ip maybe not. This Proxy help user connect to websites saf  er
+    # Anonymous Proxy: hide requester's ip before send request to servers, these proxy's IP usually have in public blacklist so you    will be limited some function when use this Proxy
+    # High Anonymity Proxy: same useage as Anonymous but more anonymous than it. Anonymous Proxy is affected by blacklist but High     Anonymity even doesnt exist in these blacklist. It hide identification information of it self, means it doesnt let anyone knows    its a proxy
+    # Transparent Proxy: public requester information to target site
+    # Disporting Proxy: change requester's original IP
+
+  # Forward Proxy useage
+    # X's Admin dont want X access to websites that cause harm to their organization
+      # Companies block exp.com bc theres virus
+      # Some companies block facebook.com to not disattract from work :))
+      # Primary schools block like cornhub.com :>
+      # The Goverment blocks websites have bad information about them
+    # Z's Admin want to block X
+      # Z's Admin relize X's hacking so Z block X's IP
+      # Z is a forum site, X is a spammer, Z block X's IP
+
+  # Reverse Proxy X -> Y, Y represent for Z
+    # Load Balancing Reverse Proxy
+      # Split requests into mutilple backend server
+      --> more effeciency and expanding
+      # exp: Nginx, HAProxy
+    # Caching Reverse Proxy
+      # Storage (cache), images, CSS, JS
+      --> Reduce load for backend server, response to client will faster
+      # exp: Varnish Cache
+    # SSL Termination / HTTPS Offloading
+      # Reverse proxy in charge of encrypt and decrypt HTTPS
+      # Backend server ca use HTTP despite of HTTPS, reduce load to process
+      # exp: Nginx, HAProxy
+    # Security / Web Application Fire Wall (WAF)
+      # Protect server from DDOS, SQL Injection, XSS...
+      # exp: Cloudflare, ModSecurity with Nginx
+    # Can deployment in 2 different layer
+      # Layer 7 (Application Layer)
+        # work on HTTP/HTTPS layer
+        # Can decide routing base on URL, header, cookie
+        # exp: Nginx, Traefik
+      # Layer 4 (Transport Layer)
+        # work on TCP/UDP
+	# routing base on IP/Port, doesnt understand HTTP
+	# exp: HAProxy in TCP mode

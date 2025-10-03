@@ -1,0 +1,32 @@
+#show disk list
+lsblk
+#create partition from disk
+fdisk /dev/namedisk
+#make new part into a ext4 storage for Linux to read/write into it
+sudo mkfs.ext4 /dev/sdb1
+mkfs: make file system
+e2fsck: etx2, etx3, etx4 filesystem check
+resize2fs: ext2, ext3, ext4 filesystem resize
+#when you use mount this will only work in this session
+#reboot it will not mount anymore
+#on boot Linux will read /etc/fstab to know what file to mount
+#file -s /dev/sdb1 to see UUID
+#to extend part like fully extend remaining disk storage
+sudo growpart /dev/sdb 1 
+#if want to change into actual size like 12Gb use parted or fdisk
+sudo parted /dev/sdb
+(parted) print
+(parted) resizepart 1 12GB
+(parted) quit
+
+flow:
+create new disk: 
+-create new part
+-create new filesystem
+-mount filesystem
+-to auto mount on reboot use file -s to see UUID
+-add device to /etc/fstab
+extend disk:
+-resize disk in VM
+-resize partition with parted
+-resize filesystem

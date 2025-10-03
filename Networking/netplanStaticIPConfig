@@ -1,0 +1,15 @@
+network:
+  version: 2
+  ethernets:
+    ens33:
+      dhcp4: no
+      addresses:
+        # your IP & subnet mask
+        - 192.168.200.10/24
+      #server gateway
+      gateway4: 192.168.200.1
+      nameservers:
+        addresses: [8.8.8.8, 1.1.1.1]
+
+then sudo netplan apply
+this file usually at /etc/netplan/01-netcfg.yaml or 50-cloud-init.yaml

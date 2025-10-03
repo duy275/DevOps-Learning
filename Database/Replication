@@ -1,0 +1,40 @@
+=========================================================
+I. Giới thiệu
+  1. Replication Database là gì
+  #là quá trình sao chép và duy trì cơ sở dữ liệu, giúp đảm bảo rằng tất cả các bản sao đều có một tập dữ liệu. Điều này đặc hữu ích khi bạn cần phân phối dữ liệu trên nhiều vị trí địa lý, cải thiện hiệu suất va đảm bảo sự an toàn của dữ liệu.
+  2. Tầm quan trọng của Replication Database trong System Design
+  #đóng vai trò quan trọng trong việc đảm bảo hiệu suất, độ tin cậy và tính sẵn sàng cao của hệ thống. Bằng cách duy trì nhiều bản sao dữ liệu, hệ thống có thể tiếp tục vận hành mà không bị gián đoạn ngay cả khi một hoặc nhiều máy chủ gặp sự cố. Đây cũng là một phương pháp tốt để phân tán tải truy cập và cải thiện thời gian phản hồi của hệ thống.
+  3. Exp
+  #Google duy trì nhiều bản sao dữ liệu trên nhiều máy chủ và vị trí địa lý khác nhau để đảm bảo rằng dịch vụ của họ luôn sẵn sàng và phản hồi nhanh chóng cho yêu cầu của người dùng.
+II. Phân loại
+  1. Master-Slave Replication
+  #Master sẽ xử lý tất cả các thay đổi trong dữ liệu còn Slave chỉ có tác dụng là sao chép và lưu trữ bản sao của các dữ liệu. Giải pháp này sẽ hữu ích khi bạn muốn phân tán tải đọc dữ liệu nhưng không muốn phức tạp hóa ghi dữ liệu
+  2. Master-Master Replication
+  #Mọi máy chủ đều có chức năng đọc và ghi dữ liệu. Mỗi máy chủ đều là master đối với dữ liệu của nó và thực hiện ghi dữ liệu đồng bộ với các máy chủ khác. Hữu ích với phân tán tải đọc và ghi dữ liệu nhưng tạo ra thách thức lớn trong tính nhất quán của dữ liệu.
+  3. Multi-Master Replication
+  #Nhiều Master có thể ghi dữ liệu nhưng đồng thời cũng có các Slave để sao chép và lưu trữ dữ liệu. Mô hình này kết hợp cả 2 loại trên, tạo ra thách thức đặc biệt trong đồng bộ hóa và xử lý xung đột dữ liệu
+III. Các khái niệm quan trọng trong thiết kế hệ thống Database Replication
+  1. Write Ahead Logging(WAL)
+  #là một kĩ thuật quan trọng được sử dụng trong Database Replication để đảm bảo tính toàn vẹn của dữ liệu. Trước khi thực hiện một thay đổi dữ liệu, hệ thống sẽ ghi lại một 'log'(nhật ký). Nếu có sự cố xảy ra, hệ thống có thể dùng log này để khôi phục dữ liệu.
+  2. Eventual Consistency và Strong Consistency
+  #Một trong những quyết định quan trọng trong thiết kế hệ thóng Database Replication là lựa chọn giữa 2 khái niệm trên. Eventual Consistency sẽ mất một khoảng tg để đồng bộ giữa các database, nhưng hệ thống có thể tiếp tục xử lý yêu cầu trong khi đồng bộ hóa. Strong Consistency sẽ đồng bộ ngay khi có sự thay đổi về dữ liệu nhưng có thể sẽ làm gián đoạn hoạt động của hệ thống.
+  3. Conflic Resolution 
+  #Xung đột dữ liệu là một vấn đề thường xảy ra trong các hệ thống Database Replication, đặc biệt là trong các mô hình M-M Multi-M. Khi 2 hoặc nhiều Master thay đổi dữu liệu cùng một lúc, hệ thống cần có một cách để xác định phiên bản dữ liệu nào chính xác. Các phương pháp giải quyết xung đột phổ biến bao gồm: "last write wins", "timestamp-based resolution" và "distributed consensus"
+  4. Data Syschronization và Data Consistency
+  #Data Synchronization là quá trình đảm bảo rằng tất cả các bản sao dữ liệu đều cập nhật với nhau. Trong khi đó, Data Consistency là khả năng đảm bảo rằng mọi người dùng đều nhìn thấy cùng một dữ liệu tại mọi thời điểm. Cả hai khái niệm này đều quan trọng trong thiết kế hệ thống Database Replication, nhưng việc đạt được chúng có thể đòi hỏi các giải pháp kỹ thuật phức tạp và thực hành quản lý cẩn thận.
+IV. Lợi ích
+  1. Tăng khả năng sẵn sàng dịch vụ
+  #Khi một máy chủ gặp sự cố -> chuyển hướng yêu cầu đến một máy chủ khác mà không gián đoạn dịch vụ.
+  2. Cải thiện hiệu năng hệ thống
+  #Phân tán tải truy cập giữa nhiều máy chủ -> giảm áp lực lên từng máy chủ và tăng khả năng xử lý nhiều yêu cầu hơn cùng 1 lúc
+  3. Đảm bảo tính toàn vẹn của dữ liệu. 
+  #Khi một thay đổi được thực hiện -> tất cả các máy được sao chép dữ liệu. --> có thể cover và backup nếu một máy chủ bị lỗi
+V. Nhược Điểm
+  1. Khó khăn đảm bảo tính nhất quán
+  2. Khó khăn đồng bộ dữ liệu
+  3. Chi phí bảo dưỡng quản lý
+VI. So sánh
+  1. Master-Slave Replication: Tốt về tính toàn vẹn dữ liệu, nhưng khả năng chịu tải và hiệu năng có thể không đạt yêu cầu nếu khối lượng truy vấn lớn.
+  2. Master-Master Replication: Cải thiện hiệu năng và khả năng chịu tải, nhưng có thể gặp khó khăn trong việc đảm bảo tính nhất quán dữ liệu.
+  3. Multi-Master Replication: Tối ưu hiệu năng và khả năng chịu tải, nhưng đòi hỏi nhiều công sức và tài nguyên để quản lý và duy trì.
+

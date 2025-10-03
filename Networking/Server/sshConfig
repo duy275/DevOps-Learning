@@ -1,0 +1,40 @@
+# download openssh-server on the device you want to SSH to
+# To gen new SSH-Key
+ssh-keygen -t rsa -b 4096
+# Copy public key into the server
+ssh-copy-id hoanqdy@"server.ip"
+--> auto save ur public key in ~/.ssh/authorized_keys
+# Or can do a handwork
+# Copy a pubkey in file ~/.ssh/id_rsa.pub
+# into a file that have location is ~/.ssh/authorized_keys
+# then changed permision to access dir and file
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+# config server to use SSH-Key only
+#use
+nvim /etc/ssh/sshd_config
+- PasswordAuthentication no
+- PubkeyAuthentication yes
+- PermitRootLogin no
+# restart service in server
+sudo systemctl restart ssh
+# then test ssh from ur lap
+ssh hoanqdy@10.2.5.11
+#SSH là giao thức gốc chạy trên cổng 22
+#Khi bật SSH server nó sẽ cho phép
+  #login shell
+  #forwarding
+  #Các subsystems trong đó có SFTP
+
+#SFTP abbreviation for Secure File Transfer Protocol
+#is a medium of transmission pakage safety and security, made base on SSH
+#- lười ghi tiếng anh quá :))
+#tóm lại là ssh là giao thức nền tảng cho phép đăng nhập từ xa máy củ, chạy lệnh, quản lý hệ thống, tạo ra kênh chuyền bảo mật
+#còn SFTP là dịch vụ con chạy bên trong SSH --> chuyên dùng để truyền file
+#
+#Setup SFTP cho mô hình IN/OUT
+#Giờ trước tiên phải phân quyền user
+#2 user một SHB có quyền xem sửa file IN và chỉ sửa file OUT và user RIPT thì ngược lại
+#2 user đều phải bị chặn SSH chỉ dùng SFTP vì bảo mật
+#2 thư mục IN/OUT phải nằm trên VM1
+#

@@ -1,0 +1,7 @@
+#systemctl to manage system config
+# Start vmware-networks service
+sudo systemctl start vmware-networks.service
+# Auto start while root
+sudo systemctl enable vmware-networks.service
+# Check vmware service status
+sudo systemctl status vmware-networks.service

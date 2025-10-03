@@ -1,0 +1,46 @@
+__________________________________
+Volume là gì?
+__________________________________
+
+Volume là cách Docker lưu trữ dữ liệu bền vững (persistent storage).
+Vì khi container bị xóa (docker rm), mọi dữ liệu trong container cũng mất. Volume giúp dữ liệu không mất khi container chết.
+
+CÁC LOẠI VOLUMES
+
+1. Anonymous Volume 
+-Docker tự tạo khi gắn -v /container/path mà không đặt tên
+exp:
+docker run -v /data ubuntu
+-> Docker tự tạo ra một volume kiểu random_name trong /var/lib/docker/volumes/xxx/_data
+
+nhược: khó quản lý vì tên ngẫu nhiên
+
+2. Named volumes
+-Mình tự đặt tên, dễ quản lý
+docker run -v mydata:/data ubuntu
+-> Dữ liệu container /data sẽ được lưu ở /var/lib/docker/volumes/mydata/_
+-> dùng khi dữ liệu lâu dài dễ backup
+
+3. Bind mount
+- Gắn trực tiếp thư mục/file ở host vào container 
+docker run -v /home/duy/myapp:/app ubuntu
+-/app trong container chính là /home/duy/myapp trên host
+-> code ở host -> container dùng ngay
+
+TẠO VOLUME
+
+docker volume create [options] VOLUME_NAME
+
+options:
+
+1. --driver:
+-chọn driver volume (mặc định local)
+- Ví dụ có driver lưu ở NFS, GlusterFS, hay cloud
+2. --label:
+- Gán nhãn cho volume (metadata để quản lý)
+docker volume create --label project=webapp mydata
+3. --opt:
+- Tùy chọn nâng cao cho driver (nếu driver là local thì rất quan trọng)
+- type: loại thiết bị gắn (none, tmpfs, nfs, ext4)
+- device: thư mục/thứ bạn muốn gắn
+- o: các option khác (như bind, rw, ro,...)
