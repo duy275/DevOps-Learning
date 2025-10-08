@@ -3,11 +3,12 @@ FROM ubuntu:22.04
 
 #cài nginx
 RUN apt-get update && \
-    apt-get install -y nginx
+    apt-get install -y nginx openssh-server
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"] 
+COPY ./entrypoint.sh /usr/local/bin/
+CMD ["/usr/local/bin/entrypoint.sh"] 
 #chạy nginx ở foreground (daemon off)

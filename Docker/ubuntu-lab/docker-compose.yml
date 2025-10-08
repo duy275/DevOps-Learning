@@ -7,6 +7,9 @@ services:
     container_name: ubuntu1
     volumes:
       - ./ubuntu1/nginx.conf:/etc/nginx/nginx.conf:ro
+      - sshkeys:/tmp/ssh_share
+    depends_on:
+      - ript
     ports:
       - "80:80"
     networks:
@@ -22,6 +25,7 @@ services:
       - ./ript/backup:/backup
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+      - sshkeys:/tmp/ssh_share
     networks:
       mynet:
         ipv4_address: 10.2.6.11
@@ -32,3 +36,6 @@ networks:
     ipam:
       config:
         - subnet: 10.2.6.0/24
+
+volumes:
+  sshkeys:

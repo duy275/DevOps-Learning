@@ -1,30 +1,39 @@
 I. Install Mysql
+
+#tải mysql server
 -sudo apt install mysql-server
--enable service
-sudo systemctl start mysql.service
-sudo systemctl enable mysql.service
+#bật service lên
+-sudo systemctl start mysql.service
+-sudo systemctl enable mysql.service
+
 II. Configuration
+
 #chạy lệnh này để đặt bảo mật và tùy chỉnh
 -sudo mysql_secure_installation
-password root cho Mysql
-bật tắt anonymous cho user
-không cho remote root
-xóa test db
+*password root cho Mysql
+*bật tắt anonymous cho user
+*không cho remote root
+*xóa test db
+
 #login
 mysql -u root -p
 #đổi phương pháp xác thực root user thành xác thực bằng mật khẩu với lệnh 
 ALTER USER "root"@"localhost" IDENTIFIED WITH mysql_native_password BY "newpassword"
 #đổi phương pháp xác thực root user thành auth socket (sudo)
 ALTER USER "root"@"localhost" IDENtIFIED WITH auth_socket;
+#ở bản mới cho phương pháp xác thực mới sha
+ALTER USER "root"@"localhost" IDENTIFIED BY "passwd";
+
 III. Tạo User
+
 #Ở ubuntu chạy mysql 5.7 trở lên root user được xác thực bằng auth_socket
 #Lệnh tạo user
 CREATE USER "username"@"host" IDENTIFI WITH authentication_plugin BY "password";
 #có thể sử dụng những plugin khác nhau phù hợp với người dùng, auth_socket là một plugin tốt nhưng chỉ có thể login ở local không có kết nối từ xa
-#có thể bỏ hẳn phần WITH authentication_plugin nếu muốn xác thực bnawfg plugin mặc định của mysql(caching_sha2_password)
-CREATE USER "username"@"localhost" IDENTIFIED WITH mysql_native_password "password";
+#có thể bỏ hẳn phần WITH authentication_plugin nếu muốn xác thực bằng plugin mặc định của mysql(caching_sha2_password)
+CREATE USER "username"@"localhost" IDENTIFIED BY "passwd"
 #Chuyển phương pháp xác thực thành caching_sha2_plugin
-ALTER USER "username" IDENTIFI WITH mysql_native_password BY "password";
+ALTER USER "username" IDENTIFIED WITH caching_sha2_password BY "passwd";
 #Gán các giá trị đặc quyền 
 GRANT PRIVILEGE ON database.table TO "username"@"host"
 #PRIVILEGE định nghĩa hành động mà user được phép thực hiện trên database mà table được chỉ định. Người dùng cũng có thể gán nhiều đặc quyền khác trong cùng một lệnh bằng cách phân tách nhau bởi dấu phẩy, muốn toàn quyền dùng *
@@ -41,7 +50,7 @@ GRANT SELECT, INSERT ON mydb.sinhvien TO "user"@'%'
 --tạo user có quyền trên toàn bộ server
 CREATE USER "admin2"@"%" IDENTIFIED BY "adminpass"
 -- Gán ALL PRIVILEGES trên tất cả db và bảng
-GRANT ALL  PRIVILEGES ON *.* TO "admin"@"%" WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON *.* TO "admin"@"%" WITH GRANT OPTION;
 --Chỉnh xong nhớ reload PRIVILEGES;
 FLUSH PRIVILEGES;
 --kiểm tra quyền user
@@ -64,7 +73,13 @@ __________________________________________________________________
 -Slave có dữ liệu giống master
 -Khi có thay đổi mới trên master, slave sẽ tiếp tục lấy về và update
 
+
 #Cách cài đặt Master Slave (primary standby) database trên MySQL
+
+__________________________________________________________________
+VM1 MASTER(PRIMARY)
+__________________________________________________________________
+
 --1. Mở file cấu hình MySQL
 sudo nvim /etc/mysql/mysql.conf.d/mysqld.cnf
 --2. Tìm và sửa
@@ -87,9 +102,9 @@ SHOW MASTER STATUS;
     Position: 156
     --> ghi nhớ 2 giá trị này để cấu hình standby bên vm2
 
-_________________________________________________________
+__________________________________________________________________
 VM2 STANDBY (SLAVE)
-_________________________________________________________
+__________________________________________________________________
 
 --1. Mở config
 sudo nvim /etc/mysql/mysql.conf.d/mysqld.cnf
@@ -116,6 +131,55 @@ Slave_IO_Running: Yes #dùng user repl để connect tới master đọc binlog 
 Slave_SQL_Running: Yes #Đọc relay log thực thi các câu lệnh làm cho dữ liệu slave giống master
 
 _____________________________________________________________________________
+REPLICATION SỬ DỤNG GTID VÀ SSL (nếu muốn dùng SSL với cách file và pos thì thêm config ssl y hệt là được)
+_____________________________________________________________________________
+
+*VM1
+#như dùng file với pos thì cái GTID này vẫn vào mysqld.cnf để cấu hình
+server-id=1
+log_bin=/var/log/mysql/mysql-bin.log
+gtid_mode=ON
+enforce_gtid_consistency=ON
+ssl-ca = /etc/mysql/certs/ca.pem
+ssl-cert = /etc/mysql/certs/server-cert.pem
+ssl-key = /etc/mysql/certs/server-key.pem
+require_secure_transport=ON
+
+#Tạo user với sha2 nhé với yêu cầu SSL cho user đó
+CREATE USER "repl"@"10.2.6.13" IDENTIFIED BY "passwd" REQUIRE SSL;
+GRANT REPLICATION SLAVE ON *.* TO "repl"@"10.2.6.13";
+FLUSH PRIVILEGES;
+
+*VM2
+server-id=1
+log_bin=/var/log/mysql/mysql-relay.log
+gtid_mode=ON
+enforce_gtid_consistency=ON
+ssl-ca = /etc/mysql/certs/ca.pem
+ssl-cert = /etc/mysql/certs/client-cert.pem
+ssl-key = /etc/mysql/certs/client-key.pem
+require_secure_transport=ON
+
+*enforce_gtid_consistency: lệnh bật chế độ GTID an toàn
+-> GTID có thể có những lệnh không tương thích như ALTER TABLE, TEMPORARY, các lệnh tác động trực tiếp vào mã GTID, ...
+GTID yêu cầu các lệnh chạy phải nằm trong "gói có thể phục hồi", nên MySQL không cho phép những lệnh này chạy.
+
+#SQL
+STOP SLAVE;
+RESET SLAVE ALL;
+CHANGE REPLICATION SOURCE TO:
+	SOURCE_HOST="10.2.6.12",
+	SOURCE_USER="repl",
+	SOURCE_PASSWORD="passwd",
+	SOURCE_AUTO_POSITION=1,
+	SOURCE_SSL=1,
+	SOURCE_SSL_CA="/etc/mysql/certs/ca.pem",
+	SOURCE_SSL_CERT="/etc/mysql/certs/client-cert.pem",
+	SOURCE_SSL_KEY="/etc/mysql/certs/client-key.pem";
+START REPLICA;
+SHOW REPLICA STATUS\G;
+
+_____________________________________________________________________________
 DUMP DATA
 _____________________________________________________________________________
 
@@ -132,7 +196,12 @@ _____________________________________________________________________________
 #File và Position luôn được thay đổi trong quá trình insert dữ liệu
 -File: file log đang được ghi
 -Pos: Vị trí trong file đấy
-__________________________________________
+
+**Cách Dump thì xem ở phần Switch Replication ở dưới nười wa :))
+_____________________________________________________________________________
+TỔNG HỢP CÁC LỖI
+_____________________________________________________________________________
+
 Nếu bị lỗi thì đọc trong file log ở /var/log/mysql/error.log
 Hoặc đọc wanring khi STOP START SLAVE bằng lệnh
 SHOW WARNINGS;
@@ -154,9 +223,9 @@ trên master chỉnh file mysqld.cnf
 binlog_do_db = mydb
 #Chỉ replicate db cần thiết ở đây là mydb
 
-__________________________________________
+_____________________________________________________________________________
 SWITCH ROLE
-__________________________________________
+_____________________________________________________________________________
 
 #Nếu mà Master lỗi thì đẩy con Slave lên làm Master
 -->

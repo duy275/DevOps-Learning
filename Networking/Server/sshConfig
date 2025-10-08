@@ -1,6 +1,6 @@
 # download openssh-server on the device you want to SSH to
 # To gen new SSH-Key
-ssh-keygen -t rsa -b 4096
+ssh-keygen -t rsa -b 4096 #-f để lưu dưới tên file -C để nhận dạng -N là mật khẩu 
 # Copy public key into the server
 ssh-copy-id hoanqdy@"server.ip"
 --> auto save ur public key in ~/.ssh/authorized_keys

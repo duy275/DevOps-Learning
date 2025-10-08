@@ -73,6 +73,7 @@ openssl x509 -req -in client.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -o
 
 4. Chỉnh quyền File
 
+chỉnh quyền file trong container sao cho thành thằng mysql dùng không thì không bật được ssl
 5. Kiểm tra kết quả
 openssl x509 -in server-cert.pem -noout -text
 openssl x509 -in client-cert.pem -noout -text
