@@ -10,5 +10,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 EXPOSE 80
 
 COPY ./entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
 CMD ["/usr/local/bin/entrypoint.sh"] 
 #chạy nginx ở foreground (daemon off)

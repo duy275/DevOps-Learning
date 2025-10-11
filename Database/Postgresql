@@ -121,6 +121,14 @@ sudo -u postgres PGPASSWORD='Repl@123' pg_basebackup \
 -P -> show progress
 -R -> tự động tạo standby.signal và primary_conninfo
 
+#cái file standby.signal để cho thằng vm2 biết nó chỉ là standby
+#nếu không có -R thì config tay
+touch /var/lib/postgresql/data/stnadby/standby.singnal
+#nó cần biết master ở đâu để stream WAL nên nó cần khai báo trong postgresql.conf hoặc postgresql.auto.conf
+primary_conninfo = "host=<vm1-ip> user=repl password=Repl@123"
+#nếu cần ssl thì thêm vào primary_conninfo
+primary_conninfo = "host=10.2.6.12 user=repl sslmode=verify-full sslcert=/etc/ssl/postgres/client.crt sslkey=/etc/ssl/postgres/client.key sslrootcert=/etc/ssl/postgres/ca.crt"
+#cách tạo SSL key với cert hoặc ca có hết trong /DevOps/Networking/SSL
 --Start Stanby
 sudo systemctl start postgresql
 
