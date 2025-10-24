@@ -1,0 +1,328 @@
+1. Kubernetes là gì?
+- là một nền tảng để tự động chạy, quản lý, và mở rộng ứng dụng -- đặc biệt là các ứng dụng chạy trong container (Docker)
+nói nôm na:
+-> Nếu Docker là cách gói ứng dụng thì Kubenetes là hệ thống để điều hành hàng trăm container đó
+
+# Ví dụ thực tế:
+* Giả sử có một app web:
+- Chạy bằng nginx
+- BE là Python
+- Database là Mysql
+* Bình thường:
+- Phải cài thủ công từng thứ trên server
+- Tự restart khi lỗi
+- Tự scale khi có nhiều user
+-> mệt dễ lỗi
+
+Dùng Kubernetes:
+- Mỗi thành phần (Nginx, Python, Mysql) là một container
+- Kubernetes sẽ tự động:
+  - Chạy chúng trên các node (máy chủ)
+  - Theo dõi và restart nếu chết
+  - Scale (Tăng giảm số lượng container)
+  - Cấp IP, load balancing
+  - Gắn storage, volume
+  - Quản lý cấu hình, secrets, logs, ...
+
+2. Cấu trúc cơ bản của Kubernetes
+Cluster:
+- là toàn bộ hệ thống Kubernetes, gồm nhiều máy (nodes) làm việc cùng nhau để chạy ứng dung dạng container
+- Chia thành 2 thành phần chính:
+  - Control Plane (Não của hệ thống)
+  - Worker Nodes (Nơi chạy ứng dụng thực tế)
+
+Ví dụ:
+Giả sử có 3 server:
+  - server1: Làm CP (điều khiển)
+  - server2, server3: làm Worker Nodes (chạy app)
+Khi chạy ứng dụng (pod), Kubernetes sẽ tự chọn node phù hợp để triển khai nó
+
+Node:
+- là một máy thật hoặc ảo trong cluster
+- Mỗi node có:
+  - Kubelet: chương trình quản lý pod trong node
+  - Container runtime (containerd, Docker): để chạy container
+  - Kube-proxy: quản lý mạng giữa các pod
+
+Ví dụ:
+Node = 1 server Ubuntu chạy K3s hoặc Kubelet.
+Khi gõ:
+kubectl get nodes
+sẽ thấy danh sách các node mà cluster có
+
+Pod:
+- là đơn vị triển khai nhỏ nhất trong Kubernetes, chứa 1 hoặc nhiều container cùng chia sẻ:
+  - Network (IP, cổng)
+  - Lifecycle (sống/chết cùng nhau)
+
+Deployment:
+- là một lớp quản lý cho pod:
+  - Tự động khởi động lại Pod nếu lỗi
+  - Tự động tạo thêm hoặc giảm bớt Pod (Scaling)
+  - Hỗ trợ rolling update (cập nhật phiên bản không downtime)
+
+Ví dụ:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+-> tạo 3 Pod nginx tự động 
+Nếu 1 pod chết, Kubernetes sẽ tạo pod mới
+
+Service:
+- cung cấp một địa chỉ IP ổn định để truy cập vào Pod dù các pod có thể thay đổi (bị xóa hoặc sinh lại)
+- có 4 loại service chính:
+  - ClusterIP	        Truy cập trong nội bộ cluster
+  - NodePort	        Truy cập từ bên ngoài qua port của node
+  - LoadBalancer	Dùng với cloud (AWS, GCP...)
+  - ExternalName	Ánh xạ DNS ra ngoài
+
+Ví dụ:
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+  type: NodePort
+-> Dù Pod nginx thay đổi, Service vẫn giữ IP/port ổn định để truy cập
+
+Volume:
+- vùng lưu trữ dữ liệu gắn vòa Pod, giúp dữ liệu không bị bất khi container bị xóa
+- Có nhiều loại Volume:
+  - emtyDir (chỉ tạm thời, xóa khi pod xóa)
+  - hostPath (dùng ổ của Node)
+  - nfs, awsEBS, ceph, longhorn (lưu ngoài cluster)
+
+Ví dụ:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-volume
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - mountPath: "/usr/share/nginx/html"
+      name: webdata
+  volumes:
+  - name: webdata
+    nfs:
+      server: 10.0.0.10
+      path: /srv/nfs/k8s
+-> Dữ liệu website sẽ được lưu trên NFS server.
+
+PersistentVolume (PV) & PersistentVolumeClaim (PVC):
+- PersistentVolume (PV): là vùng lưu trữ thật (VD: NFS, ổ đĩa)
+- PersistentVolumeClaim (PVC): là yêu cầu xin cấp vùng lưu trữ từ PV
+-> Pod dùng PVC, còn PVC gắn với PV.
+
+Ví dụ:
+PV:
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-nfs
+  spec:
+    capacity:
+      storage: 1Gi
+    accessModes:
+      - ReadWriteMany
+    nfs:
+      path: /srv/nfs/k8s
+      server: 10.0.0.10
+
+PVC:
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: pvc-nfs
+  spec:
+    accessModes:
+      - ReadWriteMany
+    resources:
+      requests:
+        storage: 1Gi
+
+Pod dùng PVC:
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: pvc-nfs
+
+Namespace:
+- là vùng không gian logic để tách tài nguyên trong cluster
+- Mỗi namespace có thể chứa Pod, Service, PVC riêng biệt
+-> dùng để tách môi trường dev/test/prod, hoặc nhiều nhóm làm việc
+
+Ví dụ:
+kubectl create namespace dev
+kubectl create namespace prod
+- Khi deploy app, chỉ cần chọn namespace:
+kubectl apply -f app.yaml -n dev
+
+ConfigMap & Secret:
+- ConfigMap: Lưu các biến cấu hình không nhạy cảm (VD: URL, port)
+- Secret: Lưu thông tin nhạy cảm (VD: mật khẩu, token, key)
+
+Ví dụ:
+ConfigMap:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: app-config
+  data:
+    APP_MODE: "production"
+
+Secret:
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: db-secret
+  type: Opaque
+  data:
+    password: cGFzc3dvcmQ=   # base64("password")
+-> Pod có thể đọc giá trị này qua biến môi trường
+
+Ingress:
+cho phép truy cập HTTP/HTTPS từ bên ngoài vào Service trong cluster,
+thông qua Ingress Controller (như Nginx, Traefik...).
+
+Ví dụ:
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  rules:
+  - host: myapp.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-service
+            port:
+              number: 80
+
+-> Khi gõ http://myapp.local, request sẽ tự đi đến nginx-service.
+
+
+
+
+TÓM TẮT TOÀN BỘ HỆ THỐNG:
+
+	+------------------+
+        |   kubectl (CLI)  |
+        +--------+---------+
+                 |
+                 v
+        +--------+---------+
+        |   Control Plane  |  <==> quản lý toàn bộ hệ thống
+        +--------+---------+
+                 |
+    +------------+------------+
+    |                         |
++---+---+               +-----+---+
+| Node1 |               | Node2   |
+| (Pod) |               | (Pod)   |
++-------+               +---------+
+
+→ K8s nhận lệnh → chọn node → tạo Pod → Pod chạy container.
+
+                       +----------------------------------+
+                       |          KUBERNETES CLUSTER      |
+                       | (toàn bộ hệ thống K8s)           |
+                       +----------------------------------+
+                           |                       |
+                           |                       |
+             +-------------+-------------+   +-----+-------------+
+             |         CONTROL PLANE      |   |   WORKER NODE     |
+             | (não – điều phối toàn hệ) |   | (máy chạy app)    |
+             +-------------+-------------+   +-------------------+
+                           |                                   |
+        +------------------+--------------------+              |
+        | Components:                             |              |
+        | - API Server (nhận lệnh kubectl)        |              |
+        | - Scheduler (chọn node để chạy Pod)     |              |
+        | - Controller Manager (giám sát Pod)     |              |
+        | - etcd (database lưu trạng thái cluster)|              |
+        +------------------------------------------+              |
+                                                                 |
+                                                                 |
+                     +------------------------------+             |
+                     |        Kubelet               | <-----------+
+                     | (agent điều khiển trên node) |
+                     +------------------------------+
+                     |        Kube-proxy            |
+                     | (quản lý mạng Pod/Service)   |
+                     +------------------------------+
+                                 |
+                                 v
+                     +------------------------------+
+                     |             POD               |
+                     | (nhóm container chạy app)     |
+                     +------------------------------+
+                     | Container 1 (VD: Nginx)       |
+                     | Container 2 (Sidecar logs)    |
+                     +------------------------------+
+                                 |
+                                 v
+                        +------------------+
+                        |     VOLUME       |
+                        | (lưu dữ liệu app)|
+                        +------------------+
+                                 |
+                +-------------------------------+
+                | PersistentVolume (PV)          |
+                |   ↳ storage thật (VD: NFS)     |
+                +-------------------------------+
+                                 ^
+                                 |
+                +-------------------------------+
+                | PersistentVolumeClaim (PVC)   |
+                |   ↳ yêu cầu dùng PV           |
+                +-------------------------------+
+
+                                 ^
+                                 |
+                      +------------------------+
+                      |        DEPLOYMENT      |
+                      | (quản lý Pod: scale,   |
+                      |  update, restart, ...) |
+                      +------------------------+
+
+                                 |
+                                 v
+                      +------------------------+
+                      |        SERVICE         |
+                      | (IP ổn định, load bal) |
+                      +------------------------+
+                                 |
+                                 v
+                      +------------------------+
+                      |        INGRESS         |
+                      | (điểm vào HTTP/HTTPS   |
+                      |  từ bên ngoài cluster) |
+                      +------------------------+
+
+

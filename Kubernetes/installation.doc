@@ -1,0 +1,145 @@
+1. Chuẩn bị hệ thống
+sudo apt install -y apt-transport-https ca-certificates curl
+
+2. Tắt swap
+- swap là bộ nhớ ảo, sử dụng một phần dung lượng ổ cứng để bổ sung cho RAM khi RAM vật lý bị đầy. Khi RAM cạn kiệt, hệ thống sẽ đẩy các dữ liệu không hoạt động từ RAM sang không gian swap để giải phóng RAM cho các tiến trình mới
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+- Kubernetes bắt tắt swap để tính toán chuẩn xác
+
+3. Thêm và bật các module mạng cần thiết
+sudo modprobe overlay
+-> nạp module overlay của Linux kernel
+- overlayfs là một loại filesystem ảo cho phép chồng nhiều hệ thống tệp lên nhau (overlay).
+- Docker và container runtime (như containerd, cri-o) dùng overlayfs để quản lý layer của image:
+  - Ví dụ: image có nhiều lớp (ubuntu base, apt install, copy file, ...)
+  - khi container overlayfs sẽ chồng các layer đó thành 1 filesystem duy nhất
+- Nếu module overlay chưa được nạp, Docker sẽ báo lỗi như:
+overlayfs: module not found
+Error starting daemon: overlay mount not supported
+-> Tóm lại overlayfs cho phép container/image hoạt động bằng overlay filesystem
+
+sudo modprobe br_netfilter
+-> nạp module br_netfilter để kernel cho phép lọc gói tin qua bridge
+- Khi dùng bridge network (như docker0, cni0, flannel.1, ...) Linux tọa một network bridge
+- Mặc định, các gói tin đi qua bridge không được xử lý bởi netfilter/iptables (tức là không áp dụng firewall)
+- Kubernetes (và nhiều mạng plugin CNI) cần xử lý gói đi qua bridge để:
+ - forward đúng giữa các pod/node
+ - cho phép network policy hoạt động
+- Module br_netfilter bật tính năng đó lên, thường đi kèm với dòng config:
+echo 1 | sudo tee /proc/sys/net/bridge/bridge-nf-call-iptables
+-> Tóm lại: br_netfilter = giúp iptables kiểm soát traffic qua bridge, cần cho Kubernetes network
+
+sysctl
+
+sudo tee /etc/sysctl.d/kubernetes.conf <<EOF
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+
+sudo sysctl --system
+
+Cấu hình							Ý nghĩa									Tác dụng trong Kubernetes
+net.bridge.bridge-nf-call-iptables = 1				Cho phép các gói tin đi qua bridge cũng được xử lý bởi iptables (IPv4)	Cần cho network plugin (CNI) hoạt động đúng
+net.ipv4.ip_forward = 1	Bật chức năng chuyển tiếp gói tin IPv4	Cho phép node forward traffic giữa các pod hoặc giữa pod và internet
+net.bridge.bridge-nf-call-ip6tables = 1				Giống dòng đầu, nhưng cho IPv6						Hỗ trợ mạng IPv6 nếu Kubernetes cluster dùng
+
+- Áp dụng cấu hình:
+sudo sysctl --system
+
+Lệnh này sẽ:
+
+Tự động đọc tất cả các file trong /etc/sysctl.d/*.conf
+
+Áp dụng ngay các giá trị vừa cấu hình
+
+Kết quả sẽ in ra màn hình, kiểu như:
+
+* Applying /etc/sysctl.d/kubernetes.conf ...
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+
+4. Cài container runtime (CRI)
+- Kubernetes không trực tiếp chạy container mà qua một CRI khác (như docker, containerd, crio,....)
+#nên dùng containerd hoặc crio docker không ngon anh nhân bảo :))
+
+- cài containerd
+sudo apt install -y containerd
+
+- tạo file cấu hình mặc định
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+
+- sửa dòng
+SystemdCgroup = true 
+# Bảo containerd (hoặc runc) dùng systemd làm trình quản lý cgroup thay vì cgroupfs.
+
+  Cgroup là gì?
+    - Cgroup (control group) là tính năng của Linux kernel cho phép:
+    - Giới hạn CPU, RAM, IO cho process
+    - Theo dõi mức sử dụng tài nguyên
+    - Cgroup có thể được quản lý theo hai kiểu:
+
+  Cgroup driver		Mô tả
+  systemd		systemd quản lý toàn bộ cấu trúc cgroup
+  cgroupfs		runtime (Docker/containerd) tự tạo cgroup riêng, độc lập với systemd
+
+  Vì sao cần SystemdCgroup = true
+
+  Kubernetes cũng dùng systemd để quản lý các service (như kubelet, kube-proxy, containerd,...).
+  Nếu container runtime lại dùng cgroupfs, thì sẽ có hai “cây cgroup” khác nhau, dẫn đến lỗi:
+
+  [WARNING SystemVerification]: missing optional cgroups: hugetlb
+  [WARNING] container runtime cgroup driver mismatch: kubelet uses systemd, runtime uses cgroupfs
+
+  Và có thể gây:
+    - Mất đồng bộ khi kubelet cố gắng quản lý container
+    - Giới hạn tài nguyên không hoạt động đúng
+    - Kubernetes Pod bị kill hoặc stuck khi restart
+
+  Kiểm tra hiện trạng
+
+  Kiểm tra kubelet đang dùng driver gì:
+  ps aux | grep kubelet | grep cgroup
+  Hoặc xem trong file
+  cat /var/lib/kubelet/config.yaml | grep cgroupDriver
+  Nếu thấy:
+  cgroupDriver: systemd
+  -> Thì trong containerd cũng phải để SystemdCgroup = true
+
+  Tóm lại
+  Thành phần		Giá trị				Ý nghĩa
+  SystemdCgroup = true	Dùng systemd để quản lý cgroup	Đồng bộ với kubelet
+  SystemdCgroup = false	Dùng cgroupfs riêng biệt	Dễ bị lỗi mismatch
+
+  -> để kubernetes và CRI có cùng một "ngôn ngữ" về quản lý tài nguyên
+
+- config xong rồi restart:
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+
+5. Cài kubeaddm, kubelet, kubectl
+- Thêm repo chính thức của Kubernetes:
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" \
+| sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt update
+
+sudo apt install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+
+Giải thích:
+  - kubeadm: tool giúp bootstrap cluster (tạo control plane, join node).
+  - kubelet: agent chạy trên mỗi node để quản lý pod.
+  - kubectl: CLI quản lý cluster.
+  - apt-mark hold: tránh cập nhật phá version đồng bộ.
+
+6. Khởi tạo Cluster
+

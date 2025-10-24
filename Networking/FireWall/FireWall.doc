@@ -1,0 +1,92 @@
+TỔNG QUAN FIREWALL TRONG LINUX VÀ KUBERNETES
+
+1. Khái niệm
+- là lớp bảo vệ mạng ở tầng Kernel hoặc hệ điều hành, có nhiệm vụ kiểm soát luồng gói tin vào/ra theo các quy tắc (rules)
+
+Trong Linux, cơ chế firewall nằm ở Netfilter, được tích hợp sẵn trong kernel
+
+2. Kiến trúc tổng thể
+
+┌────────────────────────────┐
+│     Ứng dụng quản lý FW    │
+│  (UFW, Firewalld, K3s, ...)│
+└───────────────┬────────────┘
+                │
+┌───────────────┴────────────┐
+│  iptables / nftables tools │
+└───────────────┬────────────┘
+                │
+┌───────────────┴────────────┐
+│   Netfilter (Kernel Layer) │
+└────────────────────────────┘
+
+Tầng	        Vai trò								Ghi chú
+Netfilter	Thành phần trong kernel thực thi lọc gói, NAT, forwarding	Nền tảng bắt buộc
+iptables	Công cụ dòng lệnh cũ để cấu hình Netfilter			Cũ, nhưng vẫn phổ biến
+nftables	Công cụ mới, hiệu năng cao, thay thế iptables			Mặc định từ Ubuntu 20.04+
+UFW		Giao diện đơn giản cho người dùng quản lý firewall		Wrapper của iptables/nftables
+
+3. Vai trò của Netfilter
+Netfilter cung cấp hook trong quá trình xử lý gói tin, chia thành các chain
+
+Chain		Hook	Mô tả
+PREROUTING	Trước khi định tuyến			Dùng cho DNAT (đổi IP đích)
+INPUT		Gói đến chính host			Firewall bảo vệ máy
+FORWARD		Gói đi qua host (router hoặc bridge)	Cần bật trong K8s
+OUTPUT		Gói gửi ra từ host			Cho phép ra ngoài
+POSTROUTING	Sau khi định tuyến			Dùng cho SNAT/MASQUERADE
+
+4. iptables vs nftables vs UFW
+
+Thành phần	Mô tả									Vị trí		Có nên dùng trong K8s
+Netfilter	Kernel firewall framework						Kernel		✅ Bắt buộc
+iptables	Công cụ cấu hình Netfilter (cũ)						User-space	✅ Dùng ngầm hoặc qua wrapper
+nftables	Thế hệ mới thay iptables, gọn & nhanh hơn 				User-space	✅ Dùng chính thức từ Ubuntu 20.04+
+UFW (Uncomplicated Firewall)	Giao diện thân thiện, tự viết rule iptables/nftables	User-space	⚠️ Không khuyến khích dùng với Kubernetes
+
+5. Cách hoạt động của UFW
+- Khi bật ufw enable, hệ thống sẽ tạo ra các bảng (tables) và chain trong nftables:
+
+table inet ufw {
+    chain input {
+        type filter hook input priority 0;
+        policy drop;
+        tcp dport 22 accept;
+    }
+}
+
+- Tất cả gói tin vào host sẽ đi qua chain ufw-input trước.
+- UFW không thay netfilter mà chạy trên netfilter.
+#Trong môi trường Kubernetes, UFW có thể chặn nhầm traffic của Pod hoặc NodePort,vì Kubernetes cũng cần tự thêm rule của riêng nó vào netfilter.
+
+6. Netfilter trong Kubernetes
+- Kubernetes (hoặc K3S) phụ thuộc vào netfilter để:
+  - tạo NAT (dịch IP Pod -> IP Node)
+  - Quản lý Cluster IP/ NodePort/ LoadBalancer Service
+  - Routing nội bộ giữa các Pod/ Node
+
+Các yêu cầu hệ thống bắt buộc:
+
+modprobe br_netfilter
+sysctl -w net.bridge.bridge-nf-call-iptables=1
+sysctl -w net.ipv4.ip_forward=1
+
+Tham số					Mô tả						Tác dụng
+br_netfilter				Module hỗ trợ netfilter cho bridge network	Cho phép bridge dùng nftables
+net.bridge.bridge-nf-call-iptables=1	Cho phép gói tin qua bridge đi vào netfilter	Để NAT, routing, Service hoạt động
+net.ipv4.ip_forward=1			Cho phép chuyển tiếp IP				Để Pod ra Internet
+
+7. Khi dùng nftables (Ubuntu 24.04 trở lên)
+- iptables chỉ là wrapper trỏ đến iptables-nft.
+Kiểm tra:
+sudo update-alternatives --display iptables
+- Khi cài K3S rule tự động thêm vào nftables, ví dụ:
+
+table ip nat {
+    chain POSTROUTING {
+        type nat hook postrouting priority 100;
+        oifname "eth0" masquerade
+    }
+}
+
+- Nghĩa là Kubernetes dùng nftables backend hoàn toàn, không cần iptables binary.
