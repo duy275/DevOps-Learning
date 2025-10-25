@@ -1,0 +1,71 @@
+Thành phần chính của Kubernetes và ví dụ thực tế
+1. Kube-API Server
+Là “cổng giao tiếp trung tâm” của Kubernetes — tất cả lệnh kubectl hay dashboard, CI/CD... đều nói chuyện với nó.
+Nó nhận yêu cầu (YAML, REST API), xác thực, và ghi vào etcd (database trung tâm).
+
+Ví dụ:
+Khi Dev push code → CI/CD (Jenkins/GitLab CI) gửi lệnh:
+kubectl apply -f deployment.yaml --server=https://k8s-master01:6443
+→ Jenkins chỉ cần biết API server, không cần SSH vào từng node.
+
+2. etcd
+Là database key-value lưu toàn bộ trạng thái của cluster (tên Pod, namespace, config, secrets, v.v.)
+Nếu etcd chết hoặc hỏng → cluster mất trí nhớ
+
+Ví dụ:
+Backup etcd mỗi ngày bằng cronjob:
+ETCDCTL_API=3 etcdctl snapshot save /backup/etcd-$(date +%F).db
+→ Dùng để khôi phục cluster khi có sự cố.
+
+3. Controller Manager
+Theo dõi trạng thái mong muốn (desired state) vs thực tế.
+Nếu một Pod bị chết, nó tự tạo lại.
+
+Ví dụ:
+Deployment yêu cầu 3 replica web:
+replicas: 3
+Nếu 1 container web chết → Controller manager phát hiện → spawn Pod mới để giữ đúng 3.
+
+4. Scheduler
+Quyết định Pod chạy ở node nào dựa vào tài nguyên, labels, taints/tolerations, affinity,...
+Là “bộ não điều phối” giúp phân tải hợp lý.
+
+Ví dụ:
+Pod yêu cầu:
+resources:
+  requests:
+    cpu: "1"
+    memory: "1Gi"
+Scheduler chọn node có đủ CPU/RAM và ít tải nhất.
+
+5. Kubelet (chạy trên mỗi node)
+Là “agent” nhận lệnh từ control plane để chạy Pod thực tế.
+Nó tương tác với container runtime (Docker, containerd, ...)
+
+Ví dụ:
+Control plane bảo kubelet trên worker01 chạy Pod backend:
+spec:
+  nodeName: worker01
+→ kubelet pull image, tạo container, gửi log/trạng thái về API server.
+
+6. Kube-proxy
+Quản lý mạng & load-balancing nội bộ giữa các Pod/Service.
+Dựa trên iptables hoặc nftables.
+
+Ví dụ:
+User request vào Service: web-service → kube-proxy chọn ngẫu nhiên 1 Pod backend thật để xử lý.
+
+7. Container Runtime (Docker hoặc Containerd)
+Thực thi container thực tế (tạo, xóa, quản lý image).
+K8s không chạy container trực tiếp, nó nhờ runtime này làm.
+
+Ví dụ:
+Khi kubelet tạo Pod từ image nginx:latest → containerd pull image từ Docker Hub → chạy container.
+
+8. Add-ons (các thành phần mở rộng cần thiết)
+Add-on			Vai trò								Ví dụ
+CoreDNS			Dịch tên DNS nội bộ (service.namespace.svc.cluster.local)	Pod web gọi mysql.default.svc.cluster.local
+CNI plugin		Tạo network overlay cho các Pod					Calico, Flannel, Cilium...
+Metrics Server		Thu thập tài nguyên để kubectl top hoạt động			kubectl top pods
+Dashboard		Giao diện web quản trị cluster					Dùng nội bộ doanh nghiệp
+Ingress Controller	Quản lý truy cập HTTP/HTTPS từ ngoài vào cluster		Nginx Ingress, Traefik

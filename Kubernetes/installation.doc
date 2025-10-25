@@ -30,6 +30,9 @@ sudo modprobe br_netfilter
 echo 1 | sudo tee /proc/sys/net/bridge/bridge-nf-call-iptables
 -> Tóm lại: br_netfilter = giúp iptables kiểm soát traffic qua bridge, cần cho Kubernetes network
 
+-Để nạp vĩnh viễn:
+thêm vào /etc/module-load.d xong tạo file mới thêm 2 biến và reboot
+
 sysctl
 
 sudo tee /etc/sysctl.d/kubernetes.conf <<EOF
@@ -60,6 +63,7 @@ Kết quả sẽ in ra màn hình, kiểu như:
 net.bridge.bridge-nf-call-iptables = 1
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-ip6tables = 1
+
 
 4. Cài container runtime (CRI)
 - Kubernetes không trực tiếp chạy container mà qua một CRI khác (như docker, containerd, crio,....)
@@ -142,4 +146,43 @@ Giải thích:
   - apt-mark hold: tránh cập nhật phá version đồng bộ.
 
 6. Khởi tạo Cluster
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+cái pod-network-cidr ở đây có nghĩa là dải IP và plugin mạng (CNI) sẽ cấp cho các Pod trong cluster.
+
+Ví dụ:
+- Node1: có subnet: 10.244.1.0/24
+- Node2: có subnet: 10.244.2.0/24
+- Mỗi Pod trong cluster đều nằm trong dải 10.244.0.0/16
+Các pod giao tiếp với nhau qua overlay network (VXLAN, IP-in-IP...) -> không cần host routing thật
+
+Quá trình này sẽ:
+  - Sinh certificate
+  - Tạo API server, scheduler, controller-manager
+  - Tạo etcd
+  - Cài kubelet
+  - Cấu hình control plane đầy đủ
+
+Khi thành công sẽ thấy dòng kiểu:
+Your Kubernetes control-plane has initialized successfully!
+To start using your cluster, you need to run the following as a regular user:
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Chạy đúng 3 dòng đó để có thể dùng kubectl với tư cách user thường:
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+7. Cài plugin mạng (CNI)
+Kubernetes không tự cài network plugin - mà mình phải chọn 1 trong (Flannel, Calico, Cilium, ...)
+
+Ví dụ dễ nhất (Flannel):
+kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+Sau khoảng 1-2 phút:
+kubectl get pods -A
+
+→ tất cả Pod trong namespace kube-system phải ở trạng thái Running.
+
 

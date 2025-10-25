@@ -1,0 +1,7 @@
+1. Lỗi kubelet exited STATUS = 1 là do chưa được kubeadm init thôi nhé chưa có cấu hình thôi
+2. có thể có lỗi sau khi cài cni kiểm tra thấy bị pending hoặc chưa xong thì đọc lỗi bằng 
+kubectl -n kube-flannel logs <tên pod flannel> -c install-cni
+-> sửa lỗi xong xóa pod cũ bằng
+kubectl -n kubeflannel delete pod -l app=flannel
+-> trong kubernetes các pod system dù có xóa đi thì cũng sẽ được tự sinh lại ngay lập tức
+

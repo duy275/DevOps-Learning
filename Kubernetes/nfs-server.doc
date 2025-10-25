@@ -1,0 +1,136 @@
+I. Cài NFS server trên VM2 (máy chỉ làm storage)
+
+1. Cập nhật Ubuntu và cài package NFS:
+
+bash
+sudo apt update
+sudo apt install nfs-kernel-server -y
+
+2. Tạo thư mục để chia sẻ qua mạng:
+
+bash
+sudo mkdir -p /srv/nfs/data
+sudo chown nobody:nogroup /srv/nfs/data
+sudo chmod 777 /srv/nfs/data
+
+3. Chia sẻ thư mục qua mạng (sửa file exports):
+
+bash
+echo "/srv/nfs/data *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
+
+  - /srv/nfs/data: Đường dẫn thư mục chia sẻ ra mạng.
+  - *: Cho phép mọi IP truy cập. Để an toàn chỉ nên để IP VM1: IP_VM1
+  - rw: Đọc/ghi được từ client.
+  - sync: Dữ liệu ghi xong mới xác nhận, tránh mất dữ liệu (an toàn hơn async).
+  - no_subtree_check: Không kiểm tra subtree, tăng tốc kiểm tra truy cập file.
+  - no_root_squash: User root client sẽ có quyền root trên NFS (cẩn thận khi dùng).
+
+4. Kích hoạt cài đặt chia sẻ:
+
+bash
+sudo exportfs -rav
+sudo systemctl restart nfs-kernel-server
+
+5. Kiểm tra đã chia sẻ chưa:
+
+bash
+showmount -e
+
+    Nếu ra kết quả có /srv/nfs/data nghĩa là NFS server đã hoạt động.
+
+II. Kiểm tra mount NFS từ VM1 (máy cài k8s/k3s)
+
+1. Cài gói cần thiết trên VM1:
+
+bash
+sudo apt update
+sudo apt install nfs-common -y
+
+2. Thử mount thư mục từ VM2:
+
+bash
+sudo mount -t nfs <IP_VM2>:/srv/nfs/data /mnt
+# Kiểm tra thử tạo file:
+sudo touch /mnt/test.txt
+ls /mnt  # Xem có file test.txt không
+
+# Tháo mount:
+sudo umount /mnt
+
+    Nếu tạo file và đọc được là VM1 đã truy cập NFS của VM2 thành công.
+
+III. Tạo Persistent Volume (PV) cho K8s trên VM1
+
+1. Tạo file nfs-pv.yaml với nội dung:
+
+apiVersion: v1
+kind: PersistentVolume          # Khai báo đây là resource kiểu PV (ổ lưu trữ vật lý)
+metadata:
+  name: nfs-pv                  # Tên của persistent volume này (tự đặt, dùng cho các bước sau)
+spec:
+  capacity:
+    storage: 2Gi                # Dung lượng tối đa cho volume (2 gigabyte). K8s không quản lý thực sự dung lượng NFS, đây chỉ là giá trị thông tin.
+  accessModes:
+    - ReadWriteMany             # Pod thuộc cụm K8s có thể đọc/ghi đồng thời từ nhiều pod (RWX: nhiều pod truy cập được cùng lúc)
+  nfs:
+    path: /srv/nfs/data         # Đường dẫn share trên NFS server (phải trùng `/etc/exports` trên VM2)
+    server: <IP_VM2>            # Địa chỉ IP hoặc hostname của NFS server (ví dụ: 192.168.56.12)
+  persistentVolumeReclaimPolicy: Retain  # Xoá pod mà không xoá dữ liệu storage, phải xoá tay trong NFS
+
+2. Tạo file nfs-pvc.yaml:
+
+apiVersion: v1
+kind: PersistentVolumeClaim     # Pod sử dụng volume nào phải tạo mẫu này để "xin dùng" 1 phần ổ storage
+metadata:
+  name: nfs-pvc                 # Tên của PVC, pod sẽ dùng tên này để mount volume
+spec:
+  accessModes:
+    - ReadWriteMany             # PVC này cũng cho phép nhiều pod đọc/ghi cùng lúc
+  resources:
+    requests:
+      storage: 1Gi              # Kích thước pod yêu cầu sử dụng (giới hạn logic, phải <= PV)
+  volumeName: nfs-pv            # Gắn chặt PVC này với PV "nfs-pv" (theo tên phía trên)
+
+3. Áp dụng hai file này vào k8s:
+
+bash
+kubectl apply -f nfs-pv.yaml
+kubectl apply -f nfs-pvc.yaml
+# Kiểm tra trạng thái
+kubectl get pv,pvc
+
+    Khi PVC ở trạng thái "Bound" là thành công.
+
+IV. Test: Tạo pod sử dụng NFS PV
+
+1. Tạo file nfs-test-pod.yaml:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-test
+spec:
+  containers:
+  - name: test
+    image: busybox                  # Container dùng image busybox cho nhẹ, dễ test
+    command: [ "sleep", "3600" ]    # Lệnh chạy trong pod để pod tồn tại lâu (đợi đến 1h)
+    volumeMounts:
+    - mountPath: "/mnt"             # Mount NFS storage vào đường dẫn /mnt khi vào pod
+      name: nfs-volume
+  volumes:
+  - name: nfs-volume
+    persistentVolumeClaim:
+      claimName: nfs-pvc            # Gắn volume này với PVC tên "nfs-pvc" (phải đồng nhất với PVC ở trên)
+
+2. Áp dụng vào k8s:
+
+bash
+kubectl apply -f nfs-test-pod.yaml
+kubectl get pods
+kubectl exec -it nfs-test -- sh
+# Trong shell busybox, kiểm tra /mnt có tạo được file không:
+touch /mnt/abc.txt
+ls /mnt
+
+    Nếu tạo được file, sang VM2 kiểm tra /srv/nfs/data sẽ thấy file đó.
+
