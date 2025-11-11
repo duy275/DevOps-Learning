@@ -4,4 +4,10 @@ kubectl -n kube-flannel logs <tên pod flannel> -c install-cni
 -> sửa lỗi xong xóa pod cũ bằng
 kubectl -n kubeflannel delete pod -l app=flannel
 -> trong kubernetes các pod system dù có xóa đi thì cũng sẽ được tự sinh lại ngay lập tức
+3. chạy pod xong sẽ có lỗi nếu chạy ngay trong máy mà init cluster
+- vì máy này hiện tại đang là control-plane
+- máy sẽ bị gán taint không cho phép schedule pod thường
+- ở k8s từ 1.24+ khi chỉ có 1 node, mặc định node này gán taint để pod thường không tự động chạy lên node này nhằm đảm bảo an toàn control plane
+- nhưng mà nếu vẫn muốn chạy pod luôn trên control-plane thì:
+kubectl taint nodes --all node-role.kubernetes.io/control-plane-
 

@@ -1,0 +1,49 @@
+I. Rancher install
+sudo docker run -d --restart=unless-stopped \
+-p 80:80 -p 443:443 \
+--privileged \
+--name rancher \
+-v /opt/rancher:/var/lib/rancher \
+rancher/rancher:latest
+
+#nếu có domain public
+
+sudo docker run -d --restart=unless-stopped \
+  -p 80:80 -p 443:443 \
+  --privileged \
+  --name rancher \
+  -v /opt/rancher:/var/lib/rancher \
+  rancher/rancher:latest \
+  --acme-domain rancher.duyhoang.dev
+-> rancher sẽ tự xin chứng chỉ HTTPS hợp lệ
+
+chạy xong đợi rancher khởi động
+-> kiểm tra bằng docker logs -f container-id
+-f: realtime
+
+#truy cập rancher desktop bằng ip máy
+ip a
+xem ip 
+truy cập
+exp:
+192.168.0.101
+
+II. Xóa rancher
+sudo docker stop rancher
+sudo docker rm rancher
+sudo docker volume rm $(sudo docker volume ls -q | grep rancher)
+sudo rm -rf /opt/rancher
+
+III. Import cluster vào rancher
+- Chọn import cluster
+  - trong đấy có setting, tên, ...
+
+- khi hoàn tất copy dòng lệnh rồi dán vào cluster server muốn add
+- nếu bị lỗi không có chứng chỉ SSL thì dán dòng thứ 2
+  - khi đó phải untaint cho con control plane trước khi chạy lệnh import bằng cách:
+  kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+# lỗi SSL khi m kết nối qua mạng http không phải https
+# thường thì kết nối cluster với rancher chỉ trong local nên không cần thiết chỉ cần:
+curl --insecure -sfL https://<rancher-ip>/v3/import/<token>.yaml | kubectl apply -f -
+
+- kiểm tra lại trên rancher xem trạng thái active là ok

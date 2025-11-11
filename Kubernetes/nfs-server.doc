@@ -21,7 +21,7 @@ echo "/srv/nfs/data *(rw,sync,no_subtree_check,no_root_squash)" | sudo tee /etc/
   - /srv/nfs/data: Đường dẫn thư mục chia sẻ ra mạng.
   - *: Cho phép mọi IP truy cập. Để an toàn chỉ nên để IP VM1: IP_VM1
   - rw: Đọc/ghi được từ client.
-  - sync: Dữ liệu ghi xong mới xác nhận, tránh mất dữ liệu (an toàn hơn async).
+  - sync: Dữ liệu ghi xong mới xác nhận, tránh mấết dữ liệu (an toàn hơn async).
   - no_subtree_check: Không kiểm tra subtree, tăng tốc kiểm tra truy cập file.
   - no_root_squash: User root client sẽ có quyền root trên NFS (cẩn thận khi dùng).
 

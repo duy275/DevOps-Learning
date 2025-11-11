@@ -1,0 +1,45 @@
+1. Dừng và reset toàn bộ cluster
+sudo kubeadm reset -f
+- xóa tất cả cấu hình cluster khỏi node
+- dừng kubelet, xóa kube-proxy, kube-apiserver, etcd container
+- không xóa file cấu hình hoặc data (chỉ reset trạng thái cluster)
+
+2. Gỡ bỏ mạng CNI
+sudo rm -rf /etc/cni/net.d
+sudo rm -rf /var/lib/cni/
+sudo rm -rf /var/run/flannel
+sudo ip link delete cni0 2>/dev/null
+sudo ip link delete flannel.1 2>/dev/null
+- /etc/cni/net.d: cấu hình plugin mạng.
+- cni0, flannel.1: bridge mạng do flannel tạo.
+- Nếu không xóa → lần cài mới có thể lỗi cni0 already exists.
+
+3. Xoá dữ liệu K8S và etcd
+sudo rm -rf /etc/kubernetes/
+sudo rm -rf /var/lib/etcd/
+
+/etc/kubernetes/: chứa kubeconfig, manifest YAML, certs.
+/var/lib/etcd/: database cluster.
+Nếu không xóa, cluster mới có thể đọc dữ liệu cũ → lỗi state mismatch.
+
+4. Xóa container runtime
+sudo systemctl stop containerd
+sudo rm -rf /var/lib/containerd
+sudo systemctl start containerd
+
+5. Xóa kubelet và logs
+sudo systemctl stop kubelet
+sudo rm -rf /var/lib/kubelet/
+sudo rm -rf /etc/systemd/system/kubelet.service.d
+sudo rm -f /etc/systemd/system/kubelet.service
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+
+6. xóa file cấu hình user
+rm -rf ~/.kube
+
+7. kiểm tra lại 
+ps aux | grep kube
+sudo crictl ps -a
+sudo docker ps -a     # nếu dùng docker
+ip a | grep cni

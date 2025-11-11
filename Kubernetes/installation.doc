@@ -185,4 +185,5 @@ kubectl get pods -A
 
 → tất cả Pod trong namespace kube-system phải ở trạng thái Running.
 
-
+__________________________________________________________________________________________________________
+Pod, Service, 
