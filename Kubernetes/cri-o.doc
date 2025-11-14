@@ -1,0 +1,82 @@
+1. Installation
+Đặt biến version cho K8s/CRI-O 1.30:
+
+bash
+export K8S_VERSION_MINOR=1.30
+
+Tải GPG key của CRI-O addon repo và thêm vào keyring:
+
+bash
+curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/v${K8S_VERSION_MINOR}/deb/Release.key \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+
+Thêm file .list cho CRI-O:
+
+bash
+echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] \
+https://pkgs.k8s.io/addons:/cri-o:/stable:/v${K8S_VERSION_MINOR}/deb/ /" \
+  | sudo tee /etc/apt/sources.list.d/cri-o.list
+
+4. Thêm repo cho Kubernetes 1.30
+
+Vẫn dùng biến K8S_VERSION_MINOR=1.30:
+
+bash
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION_MINOR}/deb/Release.key \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION_MINOR}/deb/ /" \
+  | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+Cập nhật lại index:
+
+bash
+sudo apt update
+
+5. Cài CRI-O + tools
+
+Cài CRI-O, CRI-O runc/crun (tùy m chọn), và cri-tools:
+
+bash
+sudo apt install -y cri-o cri-tools
+6. Enable và kiểm tra CRI-O
+
+bash
+sudo systemctl enable crio
+sudo systemctl start crio
+sudo systemctl status crio
+
+Kiểm tra socket CRI:
+
+bash
+sudo crictl info
+# hoặc
+sudo crictl --runtime-endpoint unix:///var/run/crio/crio.sock version
+
+Socket mặc định của CRI-O là unix:///var/run/crio/crio.sock dùng cho kubelet.
+
+7. Trỏ kubelet sang CRI-O
+
+Khi m dùng kubeadm init với K8s 1.30, thêm tham số runtime endpoint:
+
+bash
+sudo kubeadm init \
+  --cri-socket=unix:///var/run/crio/crio.sock \
+  --pod-network-cidr=10.244.0.0/16  # ví dụ, tùy CNI
+
+#Ví dụ anh nhân giao
+sudo kubeadm init \
+  --control-plane-endpoint "10.3.2.200:6443" \
+  --upload-certs \
+  --pod-network-cidr=10.244.0.0/16 \
+  --cri-socket=unix:///var/run/crio/crio.sock
+
+Hoặc cấu hình trong file /var/lib/kubelet/config.yaml và kubeadm config để cgroup driver của kubelet (systemd) khớp với CRI-O.
+
+8. Join Worker
+sudo kubeadm join 10.3.2.200:6443 \
+  --token <token> \
+  --discovery-token-ca-cert-hash sha256:<hash> \
+  --cri-socket=unix:///var/run/crio/crio.sock
+

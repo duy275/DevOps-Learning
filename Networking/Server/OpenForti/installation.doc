@@ -1,0 +1,4 @@
+1. Install
+sudo pacman -S openfortivpn
+2. config
+sửa file /etc/openfortivpn/config

@@ -1,0 +1,10 @@
+1. Là gì?
+-là một loadbalancer và reverse proxy
+- Chức năng chính:
+  - phân phối lưu lượng đến BE phía sau
+  - hỗ trợ TCP và HTTP
+  - health check, nếu server có vấn đề thì không gửi traffic nữa
+- Khi dùng với k8s;
+  - có thể dùng làm load balancer bên ngoài cluster, phân phối trafic đến nhiều node
+  - Trước khi cloud LB nổi tiếng, HAProxy thường được dùng cho K8S bare-meal
+

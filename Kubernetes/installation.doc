@@ -124,6 +124,8 @@ SystemdCgroup = true
 sudo systemctl restart containerd
 sudo systemctl enable containerd
 
+--> Hoặc có thể cài cri-o:
+xem ở file cri-o.doc
 5. Cài kubeaddm, kubelet, kubectl
 - Thêm repo chính thức của Kubernetes:
 sudo mkdir -p /etc/apt/keyrings
@@ -185,5 +187,5 @@ kubectl get pods -A
 
 → tất cả Pod trong namespace kube-system phải ở trạng thái Running.
 
-__________________________________________________________________________________________________________
-Pod, Service, 
+Cài cilium:
+

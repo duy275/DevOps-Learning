@@ -1,0 +1,21 @@
+1. Là gì?
+- high-availability (HA) software cho IP
+2. Chức năng chính:
+  - quản lý VIP (Virtual IP) giữa nhiều server
+  - Nếu server chính chết, Keepalived sẽ chuyển VIP sang server dự phòng, đảm bảo traffic vẫn hoạt động
+3. Khi dùng với K8S
+- Thường kết hợp với HAProxy để tạo loadbalancer HA
+- VIP do Keepalived quản lý -> HAProxy listen trên VIP -> phân phối traffic đến node
+
+4. Mô tả mối quan hệ:
+[Client]
+   |
+   |  HTTP/TCP
+   v
+[VIP do Keepalived quản lý]  <- Nếu server chính chết, VIP tự chuyển sang server dự phòng
+   |
+   v
+[HAProxy]  <- Phân phối traffic đến backend (Node Kubernetes)
+   |
+   v
+[Kubernetes Node / Pod (Chỉ control plane không liên quan gì đến worker)]
