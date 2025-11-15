@@ -8,3 +8,110 @@
   - có thể dùng làm load balancer bên ngoài cluster, phân phối trafic đến nhiều node
   - Trước khi cloud LB nổi tiếng, HAProxy thường được dùng cho K8S bare-meal
 
+2. Config trong k8s
+global
+    log /dev/log local0		
+    log /dev/log local1 notice
+    daemon
+    maxconn 2048
+
+# log /dev/log local0
+# log /dev/log local1 notice
+--> gửi log của HAproxy vào syslog (journald), dùng facility local0/local1. Syslog sẽ dùng cái này để phân loại log
+# daemon: cho HAproxy chạy kiểu daemon background (systemd vẫn quản lý được)
+# maxconn 2048: giới hạn số kết nối đồng thời tối đa. 2048 là đủ cho lab 3 master 3 worker. Nếu nhiều API hơn có thể tăng lên
+
+defaults
+    log     global
+    mode    tcp
+    option  dontlognull
+    timeout connect 5s
+    timeout client  50s
+    timeout server  50s
+
+# khối default: áp dụng cho cả backend/frontend nếu không override
+  # log global: dùng config log ở global
+  # mode tcp: set chế độ TCP mặc định. Với k8s API(HTTPS), phải dùng TCP, không được HTTP mode vì HAproxy không terminate TLS, chỉ pass through1. HAProxy có 2 kiểu chính: HTTP mode vs TCP mode
+
+    HTTP mode (Layer 7)
+
+        HAProxy hiểu nội dung HTTP, đọc header, path, host, cookie.
+
+        Thường dùng khi load balance web app: mode http, acl, use_backend, v.v.
+
+        Nếu muốn nhìn được HTTP bên trong HTTPS thì HAProxy phải giải mã TLS tại LB (terminate TLS): nhận kết nối HTTPS từ client, tự cầm cert, decrypt thành HTTP rồi mới đọc header.
+
+    TCP mode (Layer 4)
+
+        HAProxy không quan tâm nội dung; chỉ coi đó là stream TCP bytes, rồi forward thẳng tới backend.
+
+        Không đọc header HTTP, không biết request là gì.
+
+        Không cần cầm cert, không đụng gì tới TLS; backend (kube‑apiserver) tự xử lý TLS.
+
+    Kubernetes API là HTTPS, nhưng m đang để HAProxy chỉ “truyền qua”
+
+	Kubernetes API server nghe trên :6443 với HTTPS (TLS): kube‑apiserver có cert riêng, client (kubeadm, kubectl, kubelet) kết nối trực tiếp TLS tới nó.
+
+	Trong bài của m:
+
+    	HAProxy nghe ở 10.3.2.200:6443.
+
+    	Kube-apiserver trên từng master nghe ở 10.3.2.201/202/203:6443 cũng là HTTPS.
+
+    	HAProxy không cầm cert, không terminate TLS; chỉ nhận TCP connection từ client rồi forward nguyên stream TLS tới apiserver.
+
+	Đây chính là kiểu Layer 4 load balancer / TCP passthrough.
+
+  # option dontlognull : không log những kết nối tcp bị đóng ngay lập tức (giảm noise log)
+  # timeout connect 5s: nếu HAproxy không connect được BE trong 5 giây thì coi là lỗi
+  # timeout client 50s: timeout inactivity giữa HAproxy và client
+  # timeput server 50s: timeout inactivity giữa HAproxy và BE (kube-apiserver trên master)
+
+frontend k8s-api
+    bind 10.3.2.200:6443
+    mode tcp
+    option tcplog
+    default_backend k8s-masters
+
+# bind 10.3.2.200:6443:
+  # Lắng nghe trên địa chỉ VIP 10.3.2.200:6443. VIP này được Keepalived gán cho 1 trong 3 master (ens33)
+  # Toàn bộ kubeadm, kubelet, kubectl sẽ gọi https://10.3.2.200:6443
+  # Nếu VIP chưa có trên máy (Keepalived chưa chạy), HAProxy sẽ lỗi ("cannot assign requested address")
+
+# mode tcp: chắc chắn FE sẽ dùng TCP mode (ghi đè nếu default không set)
+# option tcplog: bật tcp log chi tiết cho các connection đến API (IP client, thời gian, latency...)
+# default_backend k8s-master: mọi req đến fe k8s-api sẽ được forward về be k8s-master ở dưới (fe ở đây la HAproxy còn be là 3 con master nhé)
+
+backend k8s-masters
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    server master01 10.3.2.201:6443 check
+    server master02 10.3.2.202:6443 check
+    server master03 10.3.2.203:6443 check
+
+# mode tcp: đương nhiên rồi vẫn là đừng cố parse https cứ coi là tcp thuần -> chuyển luôn đến api server
+# balance roundrobin: HAProxy chia đều req theo vòng tròn giữa 3 master (201 -> 202 -> 203 -> quay lại 201 ...). Đây là load-balancing cơ bản, không theo session/persistence
+# option tcp-check: bật healthcheck TCP cho backend; HAProxy sẽ định kỳ mở TCP connecttion đến từng server để xem api server có nghe không. Nếu có 1 server không nghe nữa, HAProxy coi như là down và không gửi traffic tới
+# server master01 10.3.2.201:6443 check:
+  # Định nghĩa 1 backend server tên master01 với địa chỉ 10.3.2.201, port 6443.
+  # check bật health check TCP cho server này (dựa trên option tcp-check).
+  # Tương tự cho master02 và master03.
+
+==> KẾT QUẢ:
+- Client/kubelet chỉ biết tới 10.3.2.200:6443.
+- HAProxy đẩy request về 1 trong 3 kube-apiserver: 10.3.2.201:6443, 10.3.2.202:6443, 10.3.2.203:6443.
+- Nếu 1 master down, HAProxy health check fail, tự bỏ master đó ra khỏi pool.
+
+Liên hệ với kubeadm và Keepalived trong bài
+
+    Keepalived:
+        Tạo VIP 10.3.2.200/24 trên interface ens33 của 1 master, với state MASTER/BACKUP, priority khác nhau.
+
+        Khi master01 chết, VIP nhảy sang master02, HAProxy trên master02 sẽ bind 10.3.2.200:6443 và tiếp tục serve API.
+
+    kubeadm:
+        controlPlaneEndpoint: "10.3.2.200:6443" trong file kubeadm-config.yaml.
+
+        kubeadm init/join dùng --control-plane-endpoint "10.3.2.200:6443" để kubelet luôn trỏ về HAProxy, không trỏ trực tiếp 1 master cụ thể.

@@ -19,3 +19,83 @@
    |
    v
 [Kubernetes Node / Pod (Chỉ control plane không liên quan gì đến worker)]
+
+5. Config
+vrrp_script chk_haproxy {
+    script "pidof haproxy"
+    interval 2
+    weight -10
+}
+
+# khối vrrp_script chk_haproxy: định nghĩa một script health-check đặt tên là chk-haproxy
+  # script "pidof haproxy": lệnh để kiểm tra, nếu pidof proxy trả về 0 (Tìm được PID) nghĩa là HAProxy đang chạy; khác 0 là Fail (0 ở đây là exit code nhé)
+  # interval 2: cứ 2 giây chạy script 1 lần
+  # weight -10: nếu script fail, priority của node sẽ bị trừ 10 điểm (ví dụ 120 xuống 110)
+
+vrrp_instance VI_1 {
+    state MASTER        # trên master01, BACKUP trên master02/03
+    interface ens33
+    virtual_router_id 60
+    priority 120        # 110 trên master02, 100 trên master03
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 1111
+    }
+    virtual_ipaddress {
+        10.3.2.200/24
+    }
+    track_script {
+        chk_haproxy
+    }
+}
+# khối vrrp_instance VI_1: đây là một cấu hình "nhóm VRRP" - tất cả master phải cùng 1 tên VI_1 và virtual_route_id giống nhau để tham gia cùng 1 nhóm VIP
+  # trên master01: state MASTER -> nó cố gắng là node chính giữ VIP khi khởi động
+  # trên master02, master03: state BACKUP -> sẽ đứng chờ, chỉ giành VIP khi master mất
+    Thực tế sau khi VRRP chạy, “ai giữ VIP” phụ thuộc vào priority + trạng thái, không chỉ mỗi state ban đầu, nhưng convention là vậy.
+
+  # interface ens33:
+    # Tên interface mạng mà VIP sẽ được gán vào (ở m là ens33, không phải eth0).
+    # Keepalived sẽ làm ip addr add 10.3.2.200/24 dev ens33 trên node đang thắng VRRP.
+    # Nếu set sai (eth0 mà máy là ens33), keepalived log lỗi “interface … doesn’t exist” và không chạy.
+
+  # priority 120:
+    # độ ưu tiên
+    # Node có priority cao hơn sẽ giữ VIP, nếu trạng thái health giống nhau.
+    # Trong bài:
+        # master01: 120 → ưu tiên cao nhất.
+        # master02: 110.
+        # master03: 100.
+    Khi script chk_haproxy fail (HAProxy chết), priority node đó bị trừ thêm 10 → dễ bị node khác cướp VIP.
+
+  # virtual_router_id 60
+    # ID VRRP của nhóm này (giống “số phòng”).
+    # Tất cả node cùng một VIP phải dùng cùng virtual_router_id để tham gia cùng nhóm VRRP.
+    # Giá trị 0–255, miễn không trùng với nhóm VIP khác trên cùng mạng.
+
+  # advert_int 1
+    # Khoảng thời gian (giây) giữa các gói VRRP advertisement.
+    # Node MASTER gửi gói VRRP xuống mạng mỗi 1 giây; nếu BACKUP không thấy gói nào trong vài chu kỳ thì hiểu MASTER chết và giành VIP.
+    # Giá trị nhỏ hơn → failover nhanh hơn nhưng ồn hơn trên mạng; 1 giây là hợp lý.
+
+  # authentication {
+	auth_type PASS
+	auth_pass 1111
+    }
+    # auth_type PASS: kiểu auth đơn giản, dùng “password” plain text.
+    # auth_pass 1111: “mật khẩu” VRRP, các node trong cùng nhóm phải giống nhau; khác thì sẽ bỏ qua gói VRRP của nhau.
+    --> Mục đích là tránh bị VRRP giả mạo từ node không mong muốn trong cùng L2 network (ở lab thì chủ yếu để đúng cấu hình).
+
+  # virtual_ipaddress {
+	10.3.2.200/24
+    }
+    # Danh sách VIP mà nhóm này quản lý (có thể nhiều dòng, ở đây chỉ 1).
+    # Chỉ node đang ACTIVE (MASTER thật sự) mới có IP này trong ip addr.
+    # Đây chính là IP mà HAProxy bind, kubeadm dùng controlPlaneEndpoint, kubelet/kubectl gọi tới.
+  # track_script {
+	chk_haproxy
+    }
+    # Nói với VRRP: “hãy dùng kết quả của script chk_haproxy để điều chỉnh priority”.
+    # Nếu script OK → priority giữ nguyên (ví dụ 120).
+    # Nếu script fail → priority giảm (120 − 10 = 110), node khác có priority cao hơn sẽ thắng.
+    --> Nhờ vậy, VIP chỉ nằm trên node nào vừa còn sống, vừa có HAProxy chạy.
