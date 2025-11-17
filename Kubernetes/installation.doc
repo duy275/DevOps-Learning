@@ -64,7 +64,9 @@ net.bridge.bridge-nf-call-iptables = 1
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 
-
+4. Cài LB với HAProxy và Keepalived
+# Xem trong file HAProxy và Keepalived
+-> sau khi cài nên tắt service của HAProxy đợi sau khi init cluster mới bật lên không sẽ bị chiếm cổng
 4. Cài container runtime (CRI)
 - Kubernetes không trực tiếp chạy container mà qua một CRI khác (như docker, containerd, crio,....)
 #nên dùng containerd hoặc crio docker không ngon anh nhân bảo :))
@@ -176,6 +178,31 @@ mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
+----------------------------------------------------------------------------
+Hoặc có thể khởi tạo bằng yaml
+exp:
+
+apiVersion: kubead.k8s.io/v1beta3
+kind: InitConfiguration
+nodeRegistration:
+   criSocket: "unix:///var/run/crio/crio.sock" #dùng socket của crio
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: v1.30.0
+controlPlaneEndpoint: "10.3.2.200:6443" #VIP của cluster
+networking:
+   podSubnet: "10.244.0.0/16"
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+
+
+chạy lệnh init
+sudo kubeadm init --config ~/kubeadm-config.yaml
+
+khi init nên thêm #bind-addres=<IP node> nếu dùng VIP, nếu không set bind-address sẽ bị chiếm mất VIP nếu VIP đó có sẵn trên máy -> HAProxy không thể bật được service
 7. Cài plugin mạng (CNI)
 Kubernetes không tự cài network plugin - mà mình phải chọn 1 trong (Flannel, Calico, Cilium, ...)
 
@@ -188,4 +215,74 @@ kubectl get pods -A
 → tất cả Pod trong namespace kube-system phải ở trạng thái Running.
 
 Cài cilium:
+
+CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+CLI_ARCH=amd64
+
+curl -L --fail --remote-name-all \
+  https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz{,.sha256sum}
+sha256sum --check cilium-linux-${CLI_ARCH}.tar.gz.sha256sum
+sudo tar xzvfC cilium-linux-${CLI_ARCH}.tar.gz /usr/local/bin
+
+cilium install
+
+kubectl get pods -n kube-system
+kubectl get nodes
+
+8. Join
+Join control plane:
+#Lấy mã:
+kubeadm token create --print-join-command
+
+-> 
+kubeadm join 10.3.2.200:6443 \
+  --token abcdef.0123456789abcdef \
+  --discovery-token-ca-cert-hash sha256:1111222233334444... \
+  --control-plane \ # nếu là control plane
+  --cri-socket=unix///var/run/crio/crio.sock \
+  --certificate-key <key> #nếu yêu cầu
+
+#hoặc có thể join bằng config.yaml
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: 10.3.2.200:6443
+    token: abcdef.0123456789abcdef
+    caCertHashes:
+      - sha256:1111222233334444...
+controlPlane:
+  localAPIEndpoint:
+    advertiseAddress: 10.3.2.202
+    bindPort: 6443
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+controlPlaneEndpoint: "10.3.2.200:6443"
+apiServer:
+  extraArgs:
+    bind-address: 10.3.2.202        # master-02 bind IP node
+  certSANs:
+    - 10.3.2.200
+
+
+#Lấy cert để join control plane:
+kubeadm init phase upload-certs --upload-certs
+
+->
+certificate key:  55556666777788889999aaaabbbbccccddddeeee...
+
+-> nếu đã join bằng lệnh và nếu dùng VIP thì vào file /etc/kubernetes/manifests/kube-apiserver.yaml
+- sửa - --bind-address thành IP máy để không chiếm mất VIP nếu VIP nhảy sang -> HAproxy không start được
+
+-> Nếu dùng VIP và là master được join vào -> chưa có VIP -> nếu không có VIP thì không thể chạy được HAProxy:
+- trong sysctl thêm biến:
+net.ipv4.ip_nonlocal_bind=1
+-> sẽ được
+
+-> Nếu lỡ join control plane nhưng lỗi
+#chạy lệnh để reset
+sudo kubeadm reset --cri-socket=unix:///var/run/crio/crio.sock --force
+sudo systemctl restart crio
+sudo systemctl restart kubelet
 
