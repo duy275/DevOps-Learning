@@ -1,0 +1,239 @@
+1. YAML trong kubernetes là gì?
+Trong K8S, tất cả mọi resource đều được mô tả bằng YAML. YAML chỉ là định dạng dữ liệu, còn ý nghĩa phụ thuộc vào K8S.
+
+Một file YAML cơ bản luôn có 4 phần đầu tiên:
+
+apiVersion: ...
+kind: ...
+metadata:
+  name: ...
+spec:
+  ...
+
+Mày chỉ cần nhớ:
+- apiVersion -> k8s dùng phiên bản nào để hiểu cái object này
+- kind -> loại object (Pod, Deployment, Service, ...)
+- metadata -> tên, label, annotation
+- spec -> cấu hình chi tiết từng loại object
+
+* 4 DÒNG NÀY KHÔNG BAO GIỜ THIẾU
+
+2. Giải thích full tất cả các phần trong YAML K8S
+(1) apiVersion
+Cho biết object này thuộc nhóm API nào
+
+Exp:
+- v1 -> core API (Pod, Service, ...)
+- app/v1 -> nhóm apps (Deployment, StatefulSet,...)
+- batch/v1 -> Job, CronJob
+- rbac.authorization.k8s.io/v1 -> RBAC
+- networking.k8s.io/v1 -> Ingress, NetworkPolicy
+
+=> chỉ cần nhớ: when in doubt -> xem doc hoặc kubectl explain <object>.apiVersion
+
+(2) kind
+Tên loại resource:
+- Pod
+- Deployment
+- Service
+- ConfigMap
+- Secret
+- Ingress
+- PersistentVolume
+- PersistentVolumeClaim
+- Job
+- CronJob
+- HorizontalPodAutoscaler
+- NetworkPolicy
+- ...
+
+Chỉ cần đổi kind -> mày đang tạo loại resource khác.
+
+(3) metadata
+Thông tin nhận diện:
+metadata:
+  name: ten-object
+  namespace: default
+  labels:
+    app: web
+    tier: backend
+  annotations:
+    description: "Ghi chú"
+
+Thành phần của metadata
+Trường		Tác dụng
+name		Tên object, bắt buộc
+namespace	Tên namespace (default nếu không ghi)
+labels		Nhóm object lại để selector tìm
+annotations	Ghi chú, metadata không dùng để filter
+
+(4) spec
+Phần quan trọng nhất -- cấu hình chi tiết resource
+Tùy loại resource mà spec khác nhau.
+
+3. TẤT CẢ CÁC PHẦN QUAN TRỌNG TRONG YAML K8S:
+A. YAML cho POD
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 80
+      env:
+        - name: ENV_NAME
+          value: "production"
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      emptyDir: {}
+  restartPolicy: Always
+
+Giải thích tất cả thành phần:
+Thành phần	Nghĩa
+containers	Danh sách container chạy trong pod
+image		Docker image
+ports		Port container expose
+env		Biến môi trường
+volumeMounts	Mount volume vào container
+volumes		Khai báo volume (emptyDir, hostPath, pvc, …)
+restartPolicy	Always / OnFailure / Never
+
+B. YAML cho Deployment
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+
+Giải thích:
+Thành phần	Nghĩa
+replicas	Số Pod
+selector	Deployment quản lý Pod nào
+template	Mẫu Pod
+template.spec	Giống spec của Pod
+
+Quan trọng nhất:
+template.metadata.labels phải khớp selector.matchLabels
+
+C. YAML cho Service
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+  type: NodePort
+
+Giải thích:
+Trường	Nghĩa
+selector	Chọn Pod dựa trên label
+port		Port service expose
+targetPort	Port của Pod
+nodePort	Port chạy trên worker node
+type		ClusterIP / NodePort / LoadBalancer
+
+D. YAML cho ConfigMap
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  DB_HOST: "localhost"
+  DB_PORT: "5432"
+
+data chứa key/value dạng text
+
+E. YAML cho Secret
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+type: Opaque
+data:
+  PASSWORD: cGFzc3dvcmQ=   # base64
+
+F. YAML cho PVC/PV
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: db-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/db
+
+G. YAML cho Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  rules:
+    - host: mysite.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-svc
+                port:
+                  number: 80
+
+4. Mẹo viết YAML
+(1) Luôn viết bằng khung chuẩn:
+apiVersion:
+kind:
+metadata:
+spec:
+(2) Dùng lệnh thần thánh:
+kubectl explain <resource> --recursive
+
+Ví dụ:
+kubectl explain deployment.spec.template.spec.containers
+
+(3) Copy skeleton từ tài liệu, chỉnh lại theo nhu cầu
+(4) Dùng VSCode + K8S Extension để auto gợi ý schema YAML
