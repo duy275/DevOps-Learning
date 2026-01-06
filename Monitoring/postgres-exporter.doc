@@ -1,0 +1,41 @@
+1. Tải postgres_exporter
+cd /tmp
+wget https://github.com/prometheus-community/postgres_exporter/releases/latest/download/postgres_exporter-*.tar.gz
+tar xvf postgres_exporter*.tar.gz
+sudo mv postgres_exporter*/postgres_exporter /usr/local/bin/
+
+2. Tạo user monitor
+sudo -u postgres psql
+
+CREATE USER exporter WITH PASSWORD 'sup3rpass';
+GRANT CONNECT ON DATABASE postgres TO exporter;
+GRANT pg_monitor TO exporter;
+
+3. Tạo env cho exporter
+sudo vi /etc/postgres_exporter.env
+
+DATA_SOURCE_NAME="postgresql://exporter:sup3rpass@localhost:5432/postgres?sslmode=disable"
+
+4. tạo systemd service
+/etc/systemd/system/postgres_exporter.service
+[Unit]
+Description=Prometheus PostgreSQL Exporter
+After=network.target postgresql.service
+
+[Service]
+EnvironmentFile=/etc/postgres_exporter.env
+ExecStart=/usr/local/bin/postgres_exporter
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+- start:
+sudo systemctl daemon-reload
+sudo systemctl enable --now posgres_exporter
+
+5. Test:
+curl http://localhost:9187/metrics
+-> output pg_up=1
+-> okk
+

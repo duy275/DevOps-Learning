@@ -1,0 +1,161 @@
+📘 NGINX METRICS – TÀI LIỆU HIỂU NHANH
+
+Tài liệu này giải thích các metrics quan trọng mà Prometheus lấy được từ nginx-prometheus-exporter (bản official).
+Mục đích: hiểu đúng ý nghĩa từng metric để dùng trong dashboard và alerting.
+
+1. Tổng quan về cách Nginx sinh metrics
+
+Exporter sẽ đọc dữ liệu từ:
+
+stub_status
+
+
+và chuyển thành metrics dạng Prometheus.
+
+Các metrics chia thành 3 nhóm:
+
+Metrics vận hành Nginx (rất quan trọng)
+
+Metrics theo dõi traffic (cần dùng trong dashboard)
+
+Metrics hệ thống của chính exporter (không quan trọng)
+
+2. METRICS QUAN TRỌNG (CRITICAL)
+
+Đây là những metrics phải hiểu rõ vì dùng để alert sự cố.
+
+🔥 2.1 nginx_up
+nginx_up 1
+
+
+=1 → Exporter truy cập được stub_status, Nginx hoạt động bình thường
+
+=0 → Exporter không đọc được Nginx → cực kỳ quan trọng, báo lỗi ngay
+
+Ý nghĩa: Xác định Nginx có đang sống hay chết.
+
+🔥 2.2 nginx_connections_active
+nginx_connections_active <number>
+
+
+Số lượng connection đang mở tại thời điểm hiện tại.
+
+Tăng bất thường → dấu hiệu bị DDoS, traffic spike, hoặc backend chậm
+
+Cần alert nếu vượt ngưỡng (tuỳ server, thường >2000)
+
+🔥 2.3 nginx_connections_reading
+nginx_connections_reading
+
+
+Số lượng connection mà Nginx đang đọc header từ client.
+
+Tăng cao → client gửi request rất chậm → possible slowloris attack
+
+🔥 2.4 nginx_connections_writing
+nginx_connections_writing
+
+
+Nginx đang ghi response về client.
+
+Tăng cao → backend chậm → Nginx phải đợi phản hồi lâu
+
+Cũng là dấu hiệu nghẽn hệ thống
+
+🔥 2.5 nginx_connections_waiting
+nginx_connections_waiting
+
+
+Connection idle, chờ keepalive.
+
+Số lớn nhưng ổn định → bình thường
+
+Số nhỏ mà active tăng → hệ thống bận
+
+🔥 2.6 nginx_connections_accepted
+🔥 2.7 nginx_connections_handled
+
+Hai metrics này theo cặp:
+
+accepted = số connection được nhận
+handled = số connection xử lý thành công
+
+
+Nếu handled < accepted → Nginx bị từ chối connection → có vấn đề.
+
+3️⃣ METRICS TRAFFIC (RẤT HỮU ÍCH)
+🔍 3.1 nginx_http_requests_total
+nginx_http_requests_total
+
+
+Tổng số request Nginx nhận được từ khi start.
+
+→ Dùng để tính RPS:
+
+rate(nginx_http_requests_total[1m])
+
+
+Đây là metric quan trọng thứ 2 sau connection.
+
+4️⃣ METRICS KHÔNG QUAN TRỌNG (NOISE)
+
+Các metrics bắt đầu bằng:
+
+process_...
+
+go_...
+
+promhttp_...
+
+Ví dụ:
+
+go_goroutines
+process_resident_memory_bytes
+process_cpu_seconds_total
+
+
+→ Đây là metrics của chính exporter, không liên quan đến Nginx.
+→ Không dùng trong alert, không đưa vào dashboard trừ khi debug exporter.
+
+5️⃣ METRICS NÊN ALERT
+
+Dưới đây là danh sách tối thiểu dùng cho hệ thống production:
+
+1) 5xx tăng bất thường
+
+→ Upstream lỗi hoặc LB nghẽn
+
+2) Active connections cao
+
+→ Tải tăng hoặc tấn công
+
+3) Reading/Writing connection cao
+
+→ Chậm từ client hoặc backend
+
+4) RPS tăng đột biến
+
+→ DDoS / Traffic spike
+
+5) nginx_up == 0
+
+→ Exporter mất kết nối → Nginx có thể chết
+
+6️⃣ GỢI Ý NGƯỠNG ALERT
+Metric	Alert khi
+nginx_up	== 0
+rate(nginx_http_requests_total[5m])	> mức bình thường 2–3 lần
+nginx_connections_active	> 2000 (tùy server)
+nginx_connections_reading	Tăng gấp 3 lần baseline
+nginx_connections_writing	Tăng liên tục 5 phút
+7️⃣ TÓM TẮT NGẮN
+
+Quan trọng nhất: Active connections, RPS, 5xx, reading/writing
+
+Không quan trọng: metrics của Go, process, promhttp
+
+stub_status là nguồn duy nhất cho exporter
+
+Nên alert các chỉ số load và lỗi
+
+Dashboard nên hiển thị connections + RPS + status code

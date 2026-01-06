@@ -1,0 +1,78 @@
+1. Tải nginx (đương nhiên rồi :))))
+sudo apt update
+sudo apt install -y nginx
+enable service lên
+
+2. Bật stub_status
+vào config nginx
+/etc/nginx/conf.d/status.conf
+server {
+    listen 127.0.0.1:8080;
+
+    location /stub_status {
+        stub_status;
+        allow 127.0.0.1;
+        deny all;
+    }
+}
+
+####LƯU Ý####
+Vị trí đặt stub_status tùy thuộc vào mục đích sử dụng của phần đó, ở đây đang là làm 1 cái LoadBalancer nên đặt ngay trên server
+
+curl thử vào http://localhost:8080/stub_status -> ra được 
+
+Active connections: 1 
+server accepts handled requests
+ 9 9 9 
+Reading: 0 Writing: 1 Waiting: 0
+
+-> là ok
+-> đây là nơi mà mình sẽ dùng nginx-prometheus-exporter để bóc metrics ra -> format lại cho đúng với format của prometheus -> mới gửi đến prometheus
+
+3. Tải nginx-prometheus-exporter
+#ở đây tải bản official, không dùng AUR vì đang làm theo doc của nginx
+#tải ở AUR còn có thể bị lỗi nữa
+
+wget https://github.com/nginxinc/nginx-prometheus-exporter/releases/download/v1.1.0/nginx-prometheus-exporter_1.1.0_linux_amd64.tar.gz
+tar xvf nginx-prometheus-exporter_1.1.0_linux_amd64.tar.gz
+
+-chuyển thư mục vào hệ thống:
+
+sudo mv nginx-prometheus-exporter /usr/local/bin/
+sudo chmod +x /usr/local/bin/nginx-prometheus-exporter
+
+- Tạo systemd service:
+/etc/systemd/system/nginx-prometheus-exporter.service
+
+[Unit]
+Description=NGINX Prometheus Exporter (Official)
+After=network.target nginx.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nginx-prometheus-exporter \
+    --nginx.scrape-uri=http://127.0.0.1:8080/nginx_status \ #cái này đổi thường đường dẫn với cổng nginx nãy set nhé
+    --web.listen-address=:9113
+Restart=always
+RestartSec=2
+
+User=nobody
+Group=nogroup
+[Install]
+WantedBy=multi-user.target
+
+- Khởi động:
+sudo systemctl daemon-reload
+sudo systemctl enable --now nginx-prometheus-exporter
+- Kiểm tra:
+systemctl status nginx-prometheus-exporter
+
+-Kiểm tra exporter được chưa:
+curl localhost:9113/metrics
+
+# HELP nginx_connections_active Active connections
+nginx_connections_active 12
+...
+
+-> ok
+
