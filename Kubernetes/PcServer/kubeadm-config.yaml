@@ -1,0 +1,35 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "10.10.10.201"     # IP thật của card Host-only trên máy này
+  bindPort: 6443
+nodeRegistration:
+  kubeletExtraArgs:
+    node-ip: "10.10.10.201"           # Ép Kubelet đăng ký bằng IP này
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+      listen-client-urls: https://127.0.0.1:2379,https://10.10.10.201:2379
+      advertise-client-urls: https://10.10.10.201:2379
+      listen-peer-urls: https://10.10.10.201:2380
+      initial-advertise-peer-urls: https://10.10.10.201:2380
+controlPlaneEndpoint: "10.10.10.200:6443" # ĐỊA CHỈ VIP (Load Balancer)
+networking:
+  podSubnet: "10.244.0.0/16"          # Dải IP ảo cho các Pod (mặc định của Flannel)
+apiServer:
+  certSANs:                           # Danh sách các IP được phép dùng SSL của K8s
+  - "10.10.10.200"                    # Phải có VIP ở đây
+  - "127.0.0.1"
+  - "10.10.10.201"
+  - "10.10.10.202"
+  - "localhost"
+  extraArgs:                     # <--- THÊM ĐOẠN NÀY
+    bind-address: "10.10.10.201" # Ép API Server chỉ nghe trên IP này
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd                 # Giúp đồng bộ với Containerd

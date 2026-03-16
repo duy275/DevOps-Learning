@@ -1,0 +1,16 @@
+apiVersion: kubeadm.k8s.io/v1beta3 # Hoặc v1beta4 nếu v1.35 yêu cầu
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: "10.10.10.200:6443" # Trỏ về VIP
+    token: "kudvhd.8wj90tixfjvuerer"       # Token của mày
+    caCertHashes:
+    - "sha256:d4bcb039819bad74353e99eacc0d0b1e90cd96b44a1081ece62ffc1b946aa7cf"
+controlPlane:
+  localAPIEndpoint:
+    advertiseAddress: "10.10.10.202"      # ÉP API SERVER CP2 DÙNG IP NÀY (Thay cho advertise-address)
+    bindPort: 6443
+  certificateKey: "273d24dc18983ca2064a2f8810df047309471d1239747a1ae8ace398e6a7a5a9"
+nodeRegistration:
+  kubeletExtraArgs:
+    node-ip: "10.10.10.202"              # ÉP KUBELET DÙNG IP NÀY (Thay cho node-ip)

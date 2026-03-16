@@ -1,4 +1,4 @@
-1. Chuẩn bị hệ thống
+﻿a1. Chuẩn bị hệ thống
 sudo apt install -y apt-transport-https ca-certificates curl
 
 2. Tắt swap
